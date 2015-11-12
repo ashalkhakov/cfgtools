@@ -6,11 +6,15 @@ abst@ype State = int
 fun
 State_make (): State
 
+fun
+print_State (State): void
+
 datatype ActionType =
   | ATreduce of ProductionNr
   | ATshift of State
   | ATaccept
-
+fun
+ActionType_print (ActionType): void
 
 fun
 Action_put_shift (State, Terminal, State): void
@@ -32,3 +36,6 @@ fun Goto (State, Nonterminal): Option (State)
 //
 fun
 automaton_run (Input, State(*initial*)): void
+//
+fun
+automaton_print (): void

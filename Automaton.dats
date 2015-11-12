@@ -41,6 +41,30 @@ val the_goto = ref (funmap_make_nil{key1,itm1} ())
 in // in of [local]
 //
 implement
+fprint_val<State> (out, s) = fprint!(out, s)
+//
+implement
+print_State (s) = fprint!(stdout_ref, s)
+//
+implement
+fprint_val<ActionType> (out, act) =
+  case+ act of
+  | ATreduce p => (
+    fprint!(out, "reduce(");
+    fprint_val<ProductionNr> (out, p);
+    fprint!(out,")")
+  )
+  | ATshift s => (
+    fprint!(out, "shift(");
+    fprint_val<State> (out, s);
+    fprint!(out, ")")
+  )
+  | ATaccept () => fprint!(out, "accept")
+//
+implement
+ActionType_print (act) = fprint_val<ActionType> (stdout_ref, act)
+//
+implement
 compare_key_key<State> (x, y) = compare (x, y)
 //
 implement
@@ -48,7 +72,7 @@ compare_key_key<key> (x, y) = let
   val c = compare_key_key<State> (x.0, y.0)
 in
   if c = 0 then let
-    val res = compare_key_key<Symbol> (x.1, y.1)
+    val res = compare_Symbol_Symbol (x.1, y.1)
     val () = ignoret(0) // HX: to circumvent a tail-call optimization bug in patsopt!!!
   in
     res
@@ -57,10 +81,10 @@ end
 //
 implement
 compare_key_key<key1> (x, y) = let
-  val c = compare_key_key<State> (x.0, y.0)
+  val c = compare (x.0, y.0)
 in
   if c = 0 then let
-    val res = compare_key_key<Symbol> (x.1, y.1)
+    val res = compare_Symbol_Symbol (x.1, y.1)
     val () = ignoret(0) // HX: to circumvent a tail-call optimization bug in patsopt!!!
   in
     res
@@ -74,28 +98,59 @@ State_make () = let
 in
   next_state
 end
-
+//
+fun
+the_state_count () = the_state_cnt[]
+//
 implement
 Action_put_shift (s0, t, s1) = let
   var res: itm?
   var map = the_actions[]
   val k = @(s0, t)
-  val-false = funmap_insert<key,itm> (map, k, ATshift(s1), res)
+  //
+  val shift = ATshift(s1)
+  //
+  val ex = funmap_insert<key,itm> (map, k, shift, res)
   val () = the_actions[] := map
-  prval () = opt_clear (res)
 in
-  (*empty*)
+  if :(res: itm?) => ex then let
+    val new = opt_unsome_get (res)
+  in
+    print!("conflict: new is ");
+    ActionType_print (shift);
+    print!(", old is ");
+    ActionType_print (new);
+    print_newline ()
+  end else let
+    prval () = opt_clear (res)
+  in
+    (*empty*)
+  end
 end
 
 implement
 Action_put_reduce (s0, t, p) = let
   var res: itm?
   var map = the_actions[]
-  val-false = funmap_insert<key,itm> (map, @(s0, t), ATreduce(p), res)
+  //
+  val reduce = ATreduce(p)
+  //
+  val ex = funmap_insert<key,itm> (map, @(s0, t), reduce, res)
   val () = the_actions[] := map
-  prval () = opt_clear (res)
 in
-  (*empty*)
+  if :(res: itm?) => ex then let
+    val new = opt_unsome_get (res)
+  in
+    print!("conflict: new is ");
+    ActionType_print (reduce);
+    print!(", old is ");
+    ActionType_print (new);
+    print_newline ()
+  end else let
+    prval () = opt_clear (res)
+  in
+    (*empty*)
+  end
 end
 
 implement
@@ -103,11 +158,65 @@ Action_put_accept (s0, t) = let
   var res: itm?
   var map = the_actions[]
   val k = @(s0, t)
-  val-false = funmap_insert<key,itm> (map, k, ATaccept(), res)
+  //
+  val accept = ATaccept ()
+  //
+  val ex = funmap_insert<key,itm> (map, k, accept, res)
   val () = the_actions[] := map
-  prval () = opt_clear (res)
 in
-  (*empty*)
+  if :(res: itm?) => ex then let
+    val new = opt_unsome_get (res)
+  in
+    print!("conflict: new is ");
+    ActionType_print (accept);
+    print!(", old is ");
+    ActionType_print (new);
+    print_newline ()
+  end else let
+    prval () = opt_clear (res)
+  in
+    (*empty*)
+  end
+end
+//
+implement
+fprint_val<key> (out, k) = let
+  val (k0, k1) = k
+  val () = fprint!(out, "(")
+  val () = fprint_val<State> (out, k0)
+  val () = fprint!(out, ", ")
+  val () = fprint_val<Symbol> (out, k1)
+  val () = fprint!(out, ")")
+in
+end
+//
+implement
+fprint_val<key1> (out, k) = let
+  val (k0, k1) = k
+  val () = fprint!(out, "(")
+  val () = fprint_val<State> (out, k0)
+  val () = fprint!(out, ", ")
+  val () = fprint_val<Symbol> (out, k1)
+  val () = fprint!(out, ")")
+in
+end
+//
+fun
+print_action (): void = let
+  val map_actions = the_actions[]
+  implement{}
+  fprint_funmap$sep (out) = fprint_string (out, "\n")
+  val () = fprint_funmap<key,itm> (stdout_ref, map_actions)
+in
+end
+//
+fun
+print_goto (): void = let
+  val map_goto = the_goto[]
+  implement{}
+  fprint_funmap$sep (out) = fprint_string (out, "\n")
+  val () = fprint_funmap<key1,itm1> (stdout_ref, map_goto)
+in
 end
 //
 implement
@@ -238,7 +347,19 @@ val s = Stack_peek_top (stack)
 in
 //
 case+ Action (s, trm) of
-| None () => Error ("no action for state and terminal")
+| None () => let
+
+  extern
+  castfn
+  s2i (State): int
+  val () = print!("Action: no action for state ", (s2i)s)
+  val () = print!(" and terminal ")
+  val () = Symbol_print(trm)
+  val () = print_newline ()
+
+in
+  Error ("no action for state and terminal")
+end
 | Some act => (
 //
 case+ act of
@@ -309,3 +430,19 @@ in
   aux (input, stack)
 end
 //
+implement
+automaton_print () = let
+//
+  val () = println!("automaton printout below")
+//
+  val () = println!("states: from 0 to ", the_state_count ())
+//
+  val () = println!("action table:")
+  val () = print_action ()
+  val () = print_newline ()
+  val () = println!("goto table:")
+  val () = print_goto ()
+  val () = print_newline ()
+//
+in
+end

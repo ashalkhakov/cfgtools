@@ -26,70 +26,6 @@ http://www.cis.upenn.edu/~jean/old511/html/cis51108lr0.pdf
 http://web.stanford.edu/class/archive/cs/cs143/cs143.1128/
 *)
 
-abst@ype ConfigurationNr = int
-// allocate a configuration with the dot pointing to the first item of the production
-// NOTE: not applicable to epsilon productions!
-extern
-fun
-Configuration_make (ProductionNr): ConfigurationNr
-// get the production of the configuration:
-extern
-fun
-Configuration_production (ConfigurationNr): ProductionNr
-// get position of the dot in production's right-hand side:
-extern
-fun
-Configuration_dot (ConfigurationNr): int(*before the focussed item of production*)
-(*
-property:
-p:ProductionNr,c:ConfigurationNr,
-p = prod(c),
-d:int,
-d = dot(c),
-d >= 0,
-d <= Production_item_count(p)
-*)
-// is there an item after the dot?
-extern
-fun
-Configuration_is_final (ConfigurationNr): bool
-(*
-is_final(c) := dot(c) = Production_item_count(prod(c))
-*)
-// advance the dot, returning the new configuration
-// NOTE: only applicable if configuration is not final
-extern
-fun
-Configuration_advance (ConfigurationNr): ConfigurationNr
-(*
-examples:
-
-1) Y ::= a X b Y Z
--->
-Production_item_count(1) = 5
-Production_yields(1) = Y
-Production_item(1,0) = a
-Production_item(1,1) = X
-Production_item(1,2) = b
-Production_item(1,3) = Y
-Production_item(1,4) = Z
-
-Y ::= .a X b Y Z
-prod(1) = 1
-dot(1) = 0
-
-Y ::= a X b Y Z .
-prod(2) = 1
-dot(2) = 5
-*)
-
-// to implement configurations
-// - configuration is just ConfigurationNr <-> ProductionNr,Dot:integer
-// - growable array to allocate and store configurations?
-// - figure out how to map a configuration's production+item
-//   back to ConfigurationNr (no dups! it's a set)
-//   - need some kind of a hashtable, doable on desktop ATS
-
 (* ****** ****** *)
 
 (*
@@ -116,72 +52,19 @@ example state I_0 (StateNr=0):
   T ::= .ID }
 *)
 
-(*
-new notion: set of states
-- type: stateset
-- yes, just the set of states given above
-- stateset identified by StateSetNr
-
-new function:
-- closure(stateset):stateset
-
-Assuming I:stateset, then closure(I) is least set such that:
-- I subsetof closure(I)
-- if (X ::= p.Yq) in I, and (Y ::= r) in Grammar, then (Y ::= .r) in closure(I)
-
-Example: Take the singleton set
-
-{ D' ::= .E eof }
-Then closure of this set is I_0:
-
-{ D' ::= .E eof,
-  E ::= .T,
-  E ::= .E + T,
-  T ::= .ID }
-where rules are added in this order using the definition.
-
-implementation of closure?
-
-1. go over all states in stateset
-
-2. for every state I, add state I to result
-
-2. for every state I, go over all configurations in I
-
-3. for every configuration C, if dot(C) is not final, and symbol in prod(C) after dot(C) is nonterminal E, go over all productions in grammar which yield nonterminal E = dot(C), and add configuration (E ::= .<X>) to result, where <X> is a sequence of symbols
-
-*)
-
-(*
-new function: goto(stateset,Symbol):stateset
-
-goto(I,X) = closure({Y ::= qX.r | (Y ::= q.Xr) in I})
-
-Example: Let us compute goto($I_0$, ID). Because only one element contains .ID, we obtain
-
-{ T ::= ID. }
-and the closure remains the same because . does not appear before a non-terminal.
-
-I1 = goto(I0, E) = { E ::= E . + T }
-I2 = goto(I1, +) = { E ::= E + . T , T ::= . ID }
-I3 = goto(I2, T) = { E ::= E + T. }
-implementation of goto(I,X):
-- allocate empty result:stateset
-- iterate over configurations in I, looking for configurations where dot is followed by any non-terminal, say X (so, the configuration should have the form Y ::= q.Xr)
-- advance the dot, creating new configuration Y ::= qX.r, and put it into result
-- return closure(result)
-*)
-
 //
 (* ****** ****** *)
 //
 staload "./Input.sats"
+staload "./LR0.sats"
 //
 (* ****** ****** *)
 //
 dynload "./Grammar.dats"
 dynload "./Input.dats"
 dynload "./Automaton.dats"
+dynload "./Configuration.dats"
+dynload "./LR0.dats"
 //
 (* ****** ****** *)
 //
@@ -190,21 +73,31 @@ main0 () = {
 //
 //
 // terminals:
-val nS = Symbol_make_ntm("S") // extended symbol!
+val nD = Symbol_make_ntm("D") // extended symbol!
 val nE = Symbol_make_ntm("E")
 val nT = Symbol_make_ntm("T")
 // nonterminals:
+val tID = Symbol_make_term("id")
 val tPLUS = Symbol_make_term("+")
-val tEOF = Symbol_make_term("$") // extended symbol!
+//val tEOF = Symbol_make_term("$") // extended symbol!
 val tLPAREN = Symbol_make_term("(")
 val tRPAREN = Symbol_make_term(")")
-val tID = Symbol_make_term("id")
 // productions:
-val _p0 = Production_make (nS, '[nE, tEOF]) // extended rule!
+//val _p0 = Production_make (nD, '[nE]) // designated initial rule
+//val _p0 = Production_make (nD, '[nE, tEOF]) // extended rule!
 val _p1 = Production_make (nE, '[nE, tPLUS, nT])
 val _p2 = Production_make (nE, '[nT])
 val _p3 = Production_make (nT, '[tLPAREN, nE, tRPAREN])
 val _p4 = Production_make (nT, '[tID])
+val _p5 = Production_augment (nE)
+//
+val () = grammar_print ()
+//
+val () = println! ("beginning construction!")
+val s0 = LR0_construct (_p5)
+val () = println! ("construction finished!")
+val () = automaton_print ()
+(*
 //
 val _s0 = State_make ()
 val _s1 = State_make ()
@@ -257,18 +150,23 @@ val () = Goto_put (_s5, nT, _s8)
 //
 val () = println! ("Hello, world!")
 //
+*)
 #define :: list_cons
 val input1 = Input_make_list (
 "id" :: "+" :: "(" :: "id" :: ")" :: "$" :: nil()
 )
 //
-val () = automaton_run (input1, _s0)
+extern
+castfn
+s2s (LR0StateNr): State
+//
+val () = automaton_run (input1, (s2s)s0(*_s0*))
 //
 val input2 = Input_make_list (
 "id" :: "+" :: "(" :: "id" :: "+" :: "id" :: ")" :: "$" :: nil()
 )
 //
-val () = automaton_run (input2, _s0)
+val () = automaton_run (input2, (s2s)s0(*_s0*))
 //
 }
 //
