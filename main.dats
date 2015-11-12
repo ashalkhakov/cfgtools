@@ -163,7 +163,7 @@ s2s (LR0StateNr): State
 val () = automaton_run (input1, (s2s)s0(*_s0*))
 //
 val input2 = Input_make_list (
-"id" :: "+" :: "(" :: "id" :: "+" :: "id" :: ")" :: "$" :: nil()
+"id" :: "+" :: "(" :: "id" :: "+" :: "id" :: "+" :: "id" :: ")" :: "$" :: nil()
 )
 //
 val () = automaton_run (input2, (s2s)s0(*_s0*))

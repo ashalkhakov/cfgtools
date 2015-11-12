@@ -33,7 +33,7 @@ _(*anon*) = "prelude/DATS/unsafe.dats"
 assume LR0StateNr = int
 //
 typedef set = set (ConfigurationNr)
-datatype LR0State = LR0State of (set, bool(*visited*))
+datatype LR0State = LR0State of (set)
 //
 typedef key = LR0StateNr
 typedef itm = LR0State
@@ -52,8 +52,8 @@ compare_key_key<LR0StateNr> (x, y) = compare (x, y)
 //
 implement
 compare_key_key<itm> (x, y) = let
-  val LR0State (s0, _) = x
-  val LR0State (s1, _) = y
+  val LR0State (s0) = x
+  val LR0State (s1) = y
 in
   funset_compare<ConfigurationNr> (s0, s1)
 end
@@ -67,42 +67,9 @@ in
   state
 end
 //
-extern
-fun LR0State_is_visited (LR0StateNr): bool
-implement
-LR0State_is_visited (s) = let
-  val LR0State (_, res) = lookup (s)
-in
-  res
-end
-//
-extern
-fun
-LR0State_mark_visited (LR0StateNr): void
-implement
-LR0State_mark_visited (s) = let
-  fn
-  aux0 (s:key): itm = let
-    val (vbox pf_at | p_at) = ref_get_viewptr {map} (the_states)
-    var state : itm // uninitialized
-    val-true = $effmask_ref (funmap_takeout<key,itm> (!p_at, s, state))
-    prval () = opt_unsome {itm} (state)
-  in
-    state
-  end
-  val LR0State (x, _) = aux0 (s)
-  val newstate = LR0State (x, true(*visited*))
-  val (vbox pf_at | p_at) = ref_get_viewptr {map} (the_states)
-  var oldstate : itm // uninitialized
-  val-false = $effmask_ref (funmap_insert (!p_at, s, newstate, oldstate))
-  prval () = opt_clear {itm} (oldstate)
-in
-  (*empty*)
-end
-//
 implement
 fprint_val<LR0StateNr> (out, lr0) = let
-  val LR0State (set, _) = lookup (lr0)
+  val LR0State (set) = lookup (lr0)
   val () = fprint_int (out, lr0)
   val () = fprint!(out, "= {")
   val () = fprint_newline (out)
@@ -114,20 +81,8 @@ fprint_val<LR0StateNr> (out, lr0) = let
 in
 end
 //
-extern
-fun
-LR0State_fprint (FILEref, LR0StateNr): void
-//
-//overload fprint with LR0State_fprint
-//
 implement
 LR0State_fprint (out, lr0) = fprint_val<LR0StateNr> (out, lr0)
-//
-extern
-fun
-LR0State_print (LR0StateNr): void
-//
-//overload print with LR0State_print
 //
 implement
 LR0State_print (p) = LR0State_fprint (stdout_ref, p)
@@ -178,7 +133,7 @@ implement
 LR0_initial (prod) = let
   val conf = Configuration_make (prod)
   val set = funset_sing<ConfigurationNr> (conf)
-  val state = LR0State (set, false)
+  val state = LR0State (set)
   val stateNr = LR0_make (state)
 in
   LR0_closure (stateNr)
@@ -186,7 +141,7 @@ end
 //
 implement
 LR0_closure (lr0) = let
-  val LR0State (set, _) = lookup (lr0)
+  val LR0State (set) = lookup (lr0)
   //
   vtypedef env = set(ConfigurationNr)
   //
@@ -227,27 +182,10 @@ LR0_closure (lr0) = let
   var env = set
   val () = aux (env)
   //
-  val state = LR0State (env, false)
+  val state = LR0State (env)
   val res = LR0_make (state)
 in
   res
-end
-//
-extern
-fun
-LR0_final_configurations (LR0StateNr): List (ConfigurationNr)
-implement
-LR0_final_configurations (lr0) = let
-  val LR0State (set, _) = lookup (lr0)
-  val xs = funset_listize (set)
-  //
-  implement
-  list_vt_filter$pred<ConfigurationNr> (x) =
-    $effmask_all (Configuration_is_final (x))
-  // end of [list_vt_filter$pred]
-  val xs = list_vt_filter<ConfigurationNr> (xs)
-in
-  list_vt2t (xs)
 end
 //
 typedef succ_key = @(LR0StateNr,Symbol)
@@ -297,7 +235,7 @@ in
     st
   end else let
     prval () = opt_unnone {succ_itm} (res)
-    val LR0State (set, _) = lookup (lr0)
+    val LR0State (set) = lookup (lr0)
     var env = funset_nil {ConfigurationNr} ()
     vtypedef Tenv = set
     implement
@@ -320,7 +258,7 @@ in
       end
     // end of [funset_foreach$fwork]
     val () = funset_foreach_env<ConfigurationNr><Tenv> (set, env)
-    val state = LR0State (env, false)
+    val state = LR0State (env)
     val stateNr = LR0_make (state)
     val res = LR0_closure (stateNr)
     val (vbox pf_at | p_at) = ref_get_viewptr {map(succ_key,succ_itm)} (the_successor)
@@ -332,16 +270,10 @@ in
   end
 end
 //
-extern
-fun{env:vt0p}
-LR0State_foreach_env$fwork (ConfigurationNr, env: &(env) >> _): void
-extern
-fun{env:vt0p}
-LR0State_foreach_env (LR0StateNr, env: &(env) >> _): void
 implement{env}
 LR0State_foreach_env (lr0, env) = let
   //
-  val LR0State (set, _) = lookup (lr0)
+  val LR0State (set) = lookup (lr0)
   //
   implement
   funset_foreach$fwork<ConfigurationNr><env>(conf, env) =
@@ -356,7 +288,7 @@ LR0_foreach_env (env) = let
   val map = the_states[]
   implement
   funmap_foreach$fwork<key,itm><env> (k, x, env) = let
-    val LR0State (s, _) = x
+    val LR0State (s) = x
   in
     LR0_foreach$fwork<env> (k, env)
   end // end of [funmap_foreach$fwork]
@@ -364,19 +296,13 @@ in
   funmap_foreach_env<key,itm><env> (map, env)
 end
 //
-extern
-fun
-LR0State_is_empty (LR0StateNr): bool
 implement
 LR0State_is_empty (lr0) = let
-  val LR0State (set, _) = lookup (lr0)
+  val LR0State (set) = lookup (lr0)
 in
   funset_is_nil (set)
 end
 //
-extern
-fun
-LR0State_is_accepting (LR0StateNr): bool
 implement
 LR0State_is_accepting (lr0) = let
   implement

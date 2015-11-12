@@ -8,6 +8,7 @@ staload _ = "prelude/DATS/basics.dats"
 staload _ = "prelude/DATS/integer.dats"
 staload _ = "prelude/DATS/reference.dats"
 staload _ = "prelude/DATS/list.dats"
+staload _ = "prelude/DATS/list_vt.dats"
 staload _ = "prelude/DATS/pointer.dats"
 staload _ = "prelude/DATS/gorder.dats"
 //
@@ -328,19 +329,70 @@ end // end of [local]
 
 (* ****** ****** *)
 
+extern
+fun
+fprint_aux (out: FILEref, r: ResultTree): void
+
+local
+
+fun aux0 (out: FILEref, i:int, xs: List(ResultTree)): void = let
+in
+//
+case+ xs of
+//
+| list_nil () => ()
+| list_cons (x, xs) => (
+  if i > 0 then fprint_string (out, ", ");
+  aux1 (out, x);
+  aux0 (out, i+1, xs)
+)
+//
+end // end of [aux0]
+//
+and aux1 (out: FILEref, x: ResultTree): void = (
+//
+case+ x of
+//
+| RTleaf trm => fprint!(out, trm)
+| RTnode (ntm, lst) => {
+//
+val () = fprint!(out, ntm, "{")
+val () = aux0 (out, 0, lst)
+val () = fprint!(out, "}")
+//
+}
+//
+) (* end of [aux1] *)
+
+in // in of [local]
+
+implement
+fprint_aux (out, r) = aux1 (out, r)
+
+end // end of [local]
+
+implement
+fprint_val<ResultTree> (out, r) = fprint_aux (out, r)
+implement
+ResultTree_fprint (out, r) = fprint_aux (out, r)
+implement
+ResultTree_print (r) = ResultTree_fprint (stdout_ref, r)
+
+(* ****** ****** *)
+
 //
 datatype
 AutomatonResult =
-  | Success of ()
+  | Success of ResultTree
   | Error of string
-  | Cont of (bool(*true: consume the input symbol*), Stack)
+  | Cont of (bool(*true: consume the input symbol*), Stack, List(ResultTree))
 //
 extern
 fun
-automaton_step (Terminal, Stack): AutomatonResult
+automaton_step (Terminal, Stack, List(ResultTree)): AutomatonResult
 //
 implement
-automaton_step (trm, stack) = let
+automaton_step (trm, stack, result) = let
 //
 val s = Stack_peek_top (stack)
 //
@@ -365,15 +417,27 @@ end
 case+ act of
 | ATshift s => let
   val stack = Stack_push (stack, s)
+  prval () = lemma_list_param (result)
+  val result = list_cons (RTleaf trm, result)
 in
-  Cont (true(*consume*), stack)
+  Cont (true(*consume*), stack, result)
 end
 | ATreduce p => let
 //
   val np = Production_item_count (p)
   val stack = Stack_pop_many (stack, np)
   val s = Stack_peek_top (stack)
-  val opt = Goto (s, Production_yields (p))
+  val head = Production_yields (p)
+
+  val np1 = (g1ofg0)np
+  val () = assert_errmsg (np1 >= 0, "np1 < 0")
+  val () = assert_errmsg (np1 <= list_length(result), "np1 is wrong!")
+  val (itms, result1) = list_split_at (result, np1)
+  val itms = list_vt_reverse (itms)
+  val itms = list_vt2t (itms)
+  val result2 = list_cons (RTnode (head, itms), result1)
+
+  val opt = Goto (s, head)
 //
 in
 //
@@ -384,12 +448,16 @@ case+ opt of
 val stack = Stack_push (stack, s)
 //
 in
-  Cont (false(*retain*), stack)
+  Cont (false(*retain*), stack, result2)
 end
 //
 end
 //
-| ATaccept () => Success ()
+| ATaccept () => let
+  val fst = list_head_exn(result)
+in
+  Success fst
+end
 //
 )
 //
@@ -401,20 +469,23 @@ implement
 automaton_run (input, initial) = let
 //
 fun
-aux (input: Input, stack: Stack): void =
+aux (input: Input, stack: Stack, result: List(ResultTree)): void =
 //
 if Input_isnot_empty (input) then let
   val i = Input_peek (input)
   val input1 = Input_pop (input)
-  val res = automaton_step (i, stack)
+  val res = automaton_step (i, stack, result)
 in
   case+ res of
-  | Success () => println!("success!")
+  | Success result => (
+    println!("success! result of parsing:");
+    println!(result)
+  ) (* end of [Success] *)
   | Error msg => println!("error! message: ", msg)
-  | Cont (consume, stack) => let
+  | Cont (consume, stack, result) => let
     val input2 = if consume then input1 else input
   in
-    aux (input2, stack)
+    aux (input2, stack, result)
   end
 //
 end // end of [list_cons]
@@ -426,8 +497,10 @@ else {
 val stack = Stack_make_empty ()
 val stack = Stack_push (stack, initial)
 //
+val result = list_nil ()
+//
 in
-  aux (input, stack)
+  aux (input, stack, result)
 end
 //
 implement

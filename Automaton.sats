@@ -13,6 +13,7 @@ datatype ActionType =
   | ATreduce of ProductionNr
   | ATshift of State
   | ATaccept
+
 fun
 ActionType_print (ActionType): void
 
@@ -32,6 +33,20 @@ Goto_put (State, Nonterminal, State): void
 fun Action (State, Terminal): Option (ActionType)
 
 fun Goto (State, Nonterminal): Option (State)
+
+//
+datatype
+ResultTree =
+  | RTleaf of Terminal
+  | RTnode of (Nonterminal, List (ResultTree))
+//
+fun
+ResultTree_fprint (FILEref, ResultTree): void
+overload fprint with ResultTree_fprint
+
+fun
+ResultTree_print (ResultTree): void
+overload print with ResultTree_print
 
 //
 fun
