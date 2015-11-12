@@ -17,41 +17,12 @@ staload "./Automaton.sats"
 //
 (* ****** ****** *)
 //
-//
-// TODO: grammar and table construction
 (*
 refs:
 http://lara.epfl.ch/w/cc09:automata_for_lr_parsing_without_lookahead
 http://www.cis.upenn.edu/~jean/old511/html/cis51108lr0.pdf
 http://web.stanford.edu/class/archive/cs/cs143/cs143.1128/
 *)
-
-(* ****** ****** *)
-
-(*
-LR0 State: StateNr identifies it
-- LR0 State is set of "dotted productions" (aka configurations)
-  - just a set of ConfigurationNr's
-- dotted production (aka configuration):  X ::= p.q
-  - where X ::= pq is a grammar rule, p, q stand for strings of symbols (terminals or nonterminals)
-of the production RHS)
-  - symbols of configuration which are to the left of dot are "seen" (to the left = their ItemNr < dot position), the dot is conceptually BEFORE the sequence of symbols on its right
-*)
-
-(*
-example grammar (it is extended grammar: we have added "eof" marker to the user-supplied initial rule, the new initial rule should consume all input):
-
-D' ::= E eof
-E ::= T
-E ::= E + T
-T ::= ID
-example state I_0 (StateNr=0):
-{ D' ::= .E eof,
-  E ::= .T,
-  E ::= .E + T,
-  T ::= .ID }
-*)
-
 //
 (* ****** ****** *)
 //
@@ -63,7 +34,7 @@ staload "./LR0.sats"
 dynload "./Grammar.dats"
 dynload "./Input.dats"
 dynload "./Automaton.dats"
-dynload "./Configuration.dats"
+dynload "./LR0Configuration.dats"
 dynload "./LR0.dats"
 //
 (* ****** ****** *)

@@ -1,25 +1,25 @@
 staload "./Grammar.sats"
 
-abst@ype ConfigurationNr = int
+abst@ype LR0ConfigurationNr = int
 // allocate a configuration with the dot pointing to the first item of the production
 // NOTE: not applicable to epsilon productions!
 
 fun
-compare_ConfigurationNr_ConfigurationNr (ConfigurationNr, ConfigurationNr):<> int
+compare_LR0ConfigurationNr_LR0ConfigurationNr (LR0ConfigurationNr, LR0ConfigurationNr):<> int
 
 fun
-Configuration_make (ProductionNr): ConfigurationNr
+LR0Configuration_make (ProductionNr): LR0ConfigurationNr
 // get the production of the configuration:
 
 fun
-Configuration_production (ConfigurationNr): ProductionNr
+LR0Configuration_production (LR0ConfigurationNr): ProductionNr
 // get position of the dot in production's right-hand side:
 
 fun
-Configuration_dot (ConfigurationNr): int(*before the focussed item of production*)
+LR0Configuration_dot (LR0ConfigurationNr): int(*before the focussed item of production*)
 (*
 property:
-p:ProductionNr,c:ConfigurationNr,
+p:ProductionNr,c:LR0ConfigurationNr,
 p = prod(c),
 d:int,
 d = dot(c),
@@ -29,18 +29,18 @@ d <= Production_item_count(p)
 // is there an item after the dot?
 
 fun
-Configuration_is_final (ConfigurationNr): bool
+LR0Configuration_is_final (LR0ConfigurationNr): bool
 (*
 is_final(c) := dot(c) = Production_item_count(prod(c))
 *)
 fun
-Configuration_is_accepting (ConfigurationNr): bool
+LR0Configuration_is_accepting (LR0ConfigurationNr): bool
 
 // advance the dot, returning the new configuration
 // NOTE: only applicable if configuration is not final
 
 fun
-Configuration_advance (ConfigurationNr): ConfigurationNr
+LR0Configuration_advance (LR0ConfigurationNr): LR0ConfigurationNr
 (*
 examples:
 
@@ -63,8 +63,8 @@ prod(2) = 1
 dot(2) = 5
 *)
 fun
-Configuration_fprint (FILEref, ConfigurationNr): void
-overload fprint with Configuration_fprint
+LR0Configuration_fprint (FILEref, LR0ConfigurationNr): void
+overload fprint with LR0Configuration_fprint
 fun
-Configuration_print (ConfigurationNr): void
-overload print with Configuration_print
+LR0Configuration_print (LR0ConfigurationNr): void
+overload print with LR0Configuration_print

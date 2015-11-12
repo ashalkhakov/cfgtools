@@ -2,7 +2,7 @@
 "share/atspre_staload.hats"
 
 staload "./Grammar.sats"
-staload "./Configuration.sats"
+staload "./LR0Configuration.sats"
 
 staload _ = "./Grammar.dats"
 
@@ -19,12 +19,12 @@ _(*anon*) = "libats/DATS/funset_avltree.dats"
 staload
 _(*anon*) = "prelude/DATS/unsafe.dats"
 //
-assume ConfigurationNr = int
+assume LR0ConfigurationNr = int
 //
-datatype Configuration = Configuration of (ProductionNr, int(*dot*))
+datatype LR0Configuration = LR0Configuration of (ProductionNr, int(*dot*))
 //
-typedef key = ConfigurationNr
-typedef itm = Configuration
+typedef key = LR0ConfigurationNr
+typedef itm = LR0Configuration
 typedef map0 = map (itm, key)
 typedef map = map (key, itm)
 //
@@ -36,13 +36,13 @@ val the_next_key = ref (0)
 implement
 compare_key_key<ProductionNr> (x, y) = compare_ProductionNr_ProductionNr (x, y)
 implement
-compare_ConfigurationNr_ConfigurationNr (x, y) = compare (x, y)
+compare_LR0ConfigurationNr_LR0ConfigurationNr (x, y) = compare (x, y)
 implement
-compare_key_key<ConfigurationNr> (x, y) = compare (x, y)
+compare_key_key<LR0ConfigurationNr> (x, y) = compare (x, y)
 implement
 compare_key_key<itm> (x, y) = let
-  val Configuration (prod0, dot0) = x
-  val Configuration (prod1, dot1) = y
+  val LR0Configuration (prod0, dot0) = x
+  val LR0Configuration (prod1, dot1) = y
   val res = compare_key_key<ProductionNr> (prod0, prod1)
 in
   if res = 0 then compare (dot0, dot1)
@@ -74,7 +74,7 @@ in
 end // end of [the_config_set_insert]
 //
 fun
-Configuration_make_internal (item: Configuration): ConfigurationNr = let
+LR0Configuration_make_internal (item: LR0Configuration): LR0ConfigurationNr = let
 var k0: key
 in
   if :(k0: key?) => funmap_search (the_config_set[], item, k0) then let
@@ -93,12 +93,12 @@ in
 end
 
 implement
-Configuration_make (prod) = let
-  val item = Configuration (prod, 0)
+LR0Configuration_make (prod) = let
+  val item = LR0Configuration (prod, 0)
   (*
   val () = println!("new config for production: ", prod)
   *)
-  val res = Configuration_make_internal (item)
+  val res = LR0Configuration_make_internal (item)
   (*
   val () = print!("resulted in: ")
   val () = print_int (res)
@@ -109,7 +109,7 @@ in
 end
 //
 extern
-fun lookup (c: int): Configuration
+fun lookup (c: int): LR0Configuration
 //
 implement
 lookup (c) = let
@@ -123,28 +123,28 @@ end
 
 
 implement
-Configuration_production (c) = let
-  val Configuration (prod, dot) = lookup (c)
+LR0Configuration_production (c) = let
+  val LR0Configuration (prod, dot) = lookup (c)
 in
   prod
 end
 implement
-Configuration_dot (c) = let
-  val Configuration (prod, dot) = lookup (c)
+LR0Configuration_dot (c) = let
+  val LR0Configuration (prod, dot) = lookup (c)
 in
   dot
 end
 implement
-Configuration_is_final (c) = let
-  val Configuration (prod, dot) = lookup (c)
+LR0Configuration_is_final (c) = let
+  val LR0Configuration (prod, dot) = lookup (c)
   val itemCount = Production_item_count (prod)
 in
   dot = itemCount
 end
 
 implement
-Configuration_is_accepting (c) = let
-  val Configuration (prod, dot) = lookup (c)
+LR0Configuration_is_accepting (c) = let
+  val LR0Configuration (prod, dot) = lookup (c)
   val itemCount = Production_item_count (prod)
 in
   if dot < itemCount then let
@@ -155,19 +155,19 @@ in
 end
 
 implement
-Configuration_advance (c) = let
-  val-false = Configuration_is_final (c)
-  val dot = Configuration_dot (c)
-  val prod = Configuration_production (c)
+LR0Configuration_advance (c) = let
+  val-false = LR0Configuration_is_final (c)
+  val dot = LR0Configuration_dot (c)
+  val prod = LR0Configuration_production (c)
   val dot1 = dot+1
-  val con = Configuration (prod, dot1)
+  val con = LR0Configuration (prod, dot1)
 in
-  Configuration_make_internal (con)
+  LR0Configuration_make_internal (con)
 end
 //
 implement
-fprint_val<ConfigurationNr> (out, c) = let
-  val Configuration (prod, dot) = lookup (c)
+fprint_val<LR0ConfigurationNr> (out, c) = let
+  val LR0Configuration (prod, dot) = lookup (c)
   val hd = Production_yields (prod)
   val () = fprint!(out, hd, " ::= ")
   fun
@@ -184,7 +184,7 @@ in
 end
 //
 implement
-Configuration_fprint (out, c) = fprint_val<ConfigurationNr> (out, c)
+LR0Configuration_fprint (out, c) = fprint_val<LR0ConfigurationNr> (out, c)
 //
 implement
-Configuration_print (c) = Configuration_fprint (stdout_ref, c)
+LR0Configuration_print (c) = LR0Configuration_fprint (stdout_ref, c)

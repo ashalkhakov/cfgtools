@@ -23,14 +23,14 @@ PATSCCOMP = $(CC) -D_XOPEN_SOURCE
 
 SOURCES_SATS += \
   Grammar.sats \
-  Configuration.sats \
+  LR0Configuration.sats \
   LR0.sats
 
 SOURCES_DATS += \
   Grammar.dats \
   Input.dats \
   Automaton.dats \
-  Configuration.dats \
+  LR0Configuration.dats \
   LR0.dats \
   main.dats
 
