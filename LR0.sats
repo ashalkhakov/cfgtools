@@ -36,6 +36,8 @@ LR0_foreach$fwork (LR0StateNr, env: &(env) >> _): void
 fun{env:vt0p}
 LR0_foreach_env (env: &(env) >> _): void
 
+fun{}
+LR0_use_SLR1 (): bool // false=use LR(0), true=use SLR(1)
+
 fun
 LR0_construct (ProductionNr(*augmented production*)): LR0StateNr
-

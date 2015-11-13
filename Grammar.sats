@@ -12,6 +12,8 @@ typedef Nonterminal = Symbol (false)
 
 val
 sym_EOF : Terminal // technically, not part of the alphabet
+val
+sym_EPS : Terminal // technically, not part of the alphabet
 
 fun
 compare_Symbol_Symbol {b1,b2:bool} (Symbol b1, Symbol b2):<> int
@@ -35,23 +37,21 @@ Symbol_foreach$fwork (Symbol, env: &(env) >> _): void
 fun{env:vt0p}
 Symbol_foreach_env (env: &(env) >> _): void
 
-// Grammar: maps ProductionNr to Production info
-// Production: ?
-// Configuration: ?
-
 abst@ype ProductionNr = int
 
 fun
 compare_ProductionNr_ProductionNr (ProductionNr, ProductionNr):<> int
 
 fun
-Production_make (Nonterminal, List(Symbol)): ProductionNr
+Production_make {n:pos} (Nonterminal, list (Symbol, n)): ProductionNr
+fun
+Production_make_eps (Nonterminal): ProductionNr
+fun
+Production_is_eps (ProductionNr): bool
 
 // make the augmented production
 fun
 Production_augment (Symbol): ProductionNr
-//fun
-//Production_is_augmented (ProductionNr): bool
 
 fun
 Production_yields (ProductionNr): Nonterminal
@@ -77,3 +77,26 @@ overload print with Production_print
 
 fun
 grammar_print (): void
+
+// set of terminals, possibly including EOF and/or EPS
+abstype termset = ptr
+//
+fun
+termset_fprint (FILEref, termset): void
+overload fprint with termset_fprint
+//
+fun
+termset_print (termset): void
+overload print with termset_print
+//
+fun{env:vt0p}
+termset_foreach$fwork (Terminal, &(env) >> _): void
+fun{env:vt0p}
+termset_foreach_env (termset, &(env) >> _): void
+//
+fun
+first (List(Symbol)): termset
+// NOTE: first probably includes eps
+fun
+follow (Nonterminal): termset
+// NOTE: follow probably includes eof

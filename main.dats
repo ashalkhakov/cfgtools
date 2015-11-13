@@ -42,7 +42,6 @@ dynload "./LR0.dats"
 implement
 main0 () = {
 //
-//
 // terminals:
 val nD = Symbol_make_ntm("D") // extended symbol!
 val nE = Symbol_make_ntm("E")
@@ -50,12 +49,9 @@ val nT = Symbol_make_ntm("T")
 // nonterminals:
 val tID = Symbol_make_term("id")
 val tPLUS = Symbol_make_term("+")
-//val tEOF = Symbol_make_term("$") // extended symbol!
 val tLPAREN = Symbol_make_term("(")
 val tRPAREN = Symbol_make_term(")")
 // productions:
-//val _p0 = Production_make (nD, '[nE]) // designated initial rule
-//val _p0 = Production_make (nD, '[nE, tEOF]) // extended rule!
 val _p1 = Production_make (nE, '[nE, tPLUS, nT])
 val _p2 = Production_make (nE, '[nT])
 val _p3 = Production_make (nT, '[tLPAREN, nE, tRPAREN])
@@ -65,6 +61,8 @@ val _p5 = Production_augment (nE)
 val () = grammar_print ()
 //
 val () = println! ("beginning construction!")
+implement
+LR0_use_SLR1<> () = false
 val s0 = LR0_construct (_p5)
 val () = println! ("construction finished!")
 val () = automaton_print ()

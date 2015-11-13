@@ -180,6 +180,13 @@ LR0_closure (lr0) = let
   end // end of [aux]
   //
   var env = set
+  // NOTE: termination condition:
+  // there exists in the set a configuration A -> .e
+  // (where e is a symbol string)
+  // for every nonterminal A which is focussed by the dot in
+  // some other configuration in the set
+  // - the number of nonterminals which are focussed but
+  //   haven't been added to the closure will decrease
   val () = aux (env)
   //
   val state = LR0State (env)
@@ -282,6 +289,9 @@ in
 end // end of [LR0State_is_accepting]
 //
 implement
+LR0_use_SLR1<> () = true
+//
+implement
 LR0_construct (p0(*augmented production*)) = let
 //
 vtypedef env = @(set(LR0StateNr), map(@(LR0StateNr,Symbol),LR0StateNr))
@@ -375,16 +385,38 @@ funset_foreach$fwork<LR0StateNr><env> (i, env) = let
   LR0State_foreach_env$fwork<env> (conf, env) =
     if LR0Configuration_is_final (conf) then {
       val prod = LR0Configuration_production (conf)
-      // put reduce against all terminals in the alphabet
-      implement
-      Symbol_foreach$fwork<env> (sym, env) =
-        if symbol_is_term (sym) then {
-          val () = Action_put_reduce ((s2s)i, sym, prod)
-        } (* end of [Symbol_foreach$fwork] *)
-      // end of [Symbol_foreach$fwork]
-      val () = Symbol_foreach_env<env> (env)
-      // reduce against $ too!
-      val () = Action_put_reduce ((s2s)i, sym_EOF, prod)
+      val use_slr1 = LR0_use_SLR1 ()
+      val () =
+        if :(env: env) => use_slr1 then let
+          // SLR(1): put reduce against all follow(Production_yields(prod))
+          val lhs = Production_yields (prod)
+          val fa = follow (lhs)
+
+          val () = println!("follow(", lhs, ") = ", fa)
+
+          implement(env)
+          termset_foreach$fwork<env> (sym, env) = {
+            val () = Action_put_reduce ((s2s)i, sym, prod)
+          } (* end of [termset_foreach$fwork] *)
+          var e = 1 : int
+          val () = termset_foreach_env<int> (fa, e)
+        in
+          (*empty*)
+        end
+        else let
+          // LR(0): put reduce against all terminals in the alphabet
+          implement
+          Symbol_foreach$fwork<env> (sym, env) =
+            if symbol_is_term (sym) then {
+              val () = Action_put_reduce ((s2s)i, sym, prod)
+            } (* end of [Symbol_foreach$fwork] *)
+          // end of [Symbol_foreach$fwork]
+          val () = Symbol_foreach_env<env> (env)
+          // reduce against $ too!
+          val () = Action_put_reduce ((s2s)i, sym_EOF, prod)
+        in
+          (*empty*)
+        end
     } (* end of [LR0State_foreach_env$fwork] *)
   val () = LR0State_foreach_env<env> (i, env)
 in
