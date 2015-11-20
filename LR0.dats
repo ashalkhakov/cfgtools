@@ -238,6 +238,9 @@ in
 end
 //
 implement{env}
+LR0State_foreach_env$fwork (lr0, env) = ()
+//
+implement{env}
 LR0State_foreach_env (lr0, env) = let
   //
   val LR0State (set) = lookup (lr0)
@@ -378,6 +381,29 @@ in
 end
 val () = funmap_foreach_env<(@(LR0StateNr,Symbol)),LR0StateNr><int> (lr0trans, env)
 //
+val () = println!("making reduce actions")
+//
+// DEBUG
+// print first() for symbols
+implement{env}
+Symbol_foreach$fwork (sym, env) = let
+    val syms = list_cons{Symbol} (sym, list_nil{Symbol}())
+    val fs = first(syms)
+    val () = println!("first(", sym, ") = ", fs)
+  in
+  end // end of [Symbol_foreach$fwork]
+val () = Symbol_foreach_env<int> (env)
+// print follow() for nonterminals
+implement{env}
+Symbol_foreach$fwork (sym, env) =
+  if symbol_is_nt (sym) then let
+    val fs = follow(sym)
+    val () = println!("follow(", sym, ") = ", fs)
+  in
+  end // end of [Symbol_foreach$fwork]
+val () = Symbol_foreach_env<int> (env)
+// ENDDEBUG
+//
 // make reduce actions
 implement(env)
 funset_foreach$fwork<LR0StateNr><env> (i, env) = let
@@ -386,16 +412,22 @@ funset_foreach$fwork<LR0StateNr><env> (i, env) = let
     if LR0Configuration_is_final (conf) then {
       val prod = LR0Configuration_production (conf)
       val use_slr1 = LR0_use_SLR1 ()
+      val () = println!("using SLR(1): ", use_slr1)
       val () =
         if :(env: env) => use_slr1 then let
           // SLR(1): put reduce against all follow(Production_yields(prod))
           val lhs = Production_yields (prod)
+(*
+          val () = println!("getting follow...")
+*)
+          // stops here for some reason
           val fa = follow (lhs)
 
-          val () = println!("follow(", lhs, ") = ", fa)
+          val () = println!("got out of follow")
+//          val () = println!("follow(", lhs, ") = ", fa)
 
-          implement(env)
-          termset_foreach$fwork<env> (sym, env) = {
+          implement{env}
+          termset_foreach$fwork (sym, env) = {
             val () = Action_put_reduce ((s2s)i, sym, prod)
           } (* end of [termset_foreach$fwork] *)
           var e = 1 : int
@@ -423,6 +455,8 @@ in
 end // end of [LR0_foreach$fwork]
 val () = funset_foreach_env<LR0StateNr><int> (lr0states, env)
 //
+val () = println!("making shift actions")
+//
 // make shift actions
 implement(env)
 funmap_foreach$fwork<(@(LR0StateNr,Symbol)),LR0StateNr><env> (k, j, env) = let
@@ -432,6 +466,9 @@ in
   else Goto_put ((s2s)i, sym, (s2s)j)
 end
 val () = funmap_foreach_env<(@(LR0StateNr,Symbol)),LR0StateNr><int> (lr0trans, env)
+//
+val () = println!("making accept actions")
+//
 // make accept actions
 implement(env)
 funset_foreach$fwork<LR0StateNr><env> (s, env) =

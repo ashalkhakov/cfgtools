@@ -95,7 +95,7 @@ fun{env:vt0p}
 termset_foreach_env (termset, &(env) >> _): void
 //
 fun
-first (List(Symbol)): termset
+first {n:pos} (list(Symbol, n)): termset
 // NOTE: first probably includes eps
 fun
 follow (Nonterminal): termset

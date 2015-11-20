@@ -133,10 +133,9 @@ the_alphabet_get (): set(itm)
 implement
 the_alphabet_get () = the_alphabet[]
 //
-(*
-fun{env:vt0p}
-Symbol_foreach$fwork (Symbol, env: &(env) >> _): void
-*)
+implement{env}
+Symbol_foreach$fwork (s, env) = ()
+//
 implement{env}
 Symbol_foreach_env (env) = let
   val set = the_alphabet_get ()
@@ -187,6 +186,12 @@ implement
 lookup (p) = let
   val map = ref_get_elt<map> (the_prods)
   var prod : itm // uninitialized
+(*
+  val () = print!("lookup(")
+  val () = print_int (p)
+  val () = print!(")")
+  val () = print_newline ()
+*)
   val-true = $effmask_ref (funmap_search<key,itm> (map, p, prod))
   prval () = opt_unsome {itm} (prod)
 in
@@ -272,10 +277,10 @@ fun
 get_prods_map (): map
 implement
 get_prods_map () = ref_get_elt<map> (the_prods)
-(*
-fun{env:vt0p}
-Production_head_foreach$fwork (ProductionNr, env: &(env) >> _): void
-*)
+//
+implement{env}
+Production_head_foreach$fwork (p, env) = ()
+//
 implement{env}
 Production_head_foreach_env (nt, env) = let
   val map = get_prods_map ()
@@ -298,6 +303,7 @@ fprint_val<ProductionNr> (out, p) = {
   val () = fprint_string (out, " ::= ")
   val () = fprint_list<Symbol> (out, rhs)
 }
+//
 implement
 Production_fprint (out, p) = fprint_val<ProductionNr>(out, p)
 implement
@@ -348,6 +354,9 @@ implement
 termset_print (ts) = termset_fprint (stdout_ref, ts)
 //
 implement{env}
+termset_foreach$fwork (t, env) = ()
+//
+implement{env}
 termset_foreach_env (ts, env) = let
   implement
   funset_foreach$fwork<Terminal><env> (t, env) =
@@ -359,6 +368,49 @@ in
 end // end of [termset_foreach_env]
 //
 // NOTE: from http://www.cs.virginia.edu/~cs415/reading/FirstFollowLL.pdf
+
+(*
+the previous attempt doesn't work, never stops.
+http://marvin.cs.uidaho.edu/Teaching/CS445/firstfollow.txt
+http://lara.epfl.ch/w/cc09:algorithm_for_first_and_follow_sets
+http://ezekiel.vancouver.wsu.edu/~cs452/lectures/first-follow/firstfollow.pdf
+- this is even better! shows the nullable, first, follow set construction
+  but in mathematical terms
+- construct the nullable, first, follow sets
+- then SLR(1) will be easy to do
+- ... and LR(1) will be a bit harder but nevertheless okay
+and: http://compilers.iecc.com/comparch/article/01-04-079
+and here: http://www.cis.upenn.edu/~jean/gbooks/graphm.pdf
+- okay, I've implemented the digraph abstract type,
+  now I can probably follow what's given in graphm.pdf
+
+var nullable: set(Nonterminal)
+var first: map(Symbol,termset)
+var follow: map(Nonterminal,Termset)
+
+nullable = {}
+foreach nonterminal X:
+  first(X)={}
+  follow(X)={}
+for each terminal Y:
+  first(Y)={Y}
+  follow(Y)={}
+
+repeat
+ foreach grammar rule X ::= Y(1) ... Y(k)
+  if k=0 or {Y(1),...,Y(k)} subset of nullable then
+    nullable = nullable union {X}
+    NOTE: in my case, for eps-rules, k=1 and Y(1) = eps
+  for i = 1 to k
+    if i=1 or {Y(1),...,Y(i-1)} subset of nullable then
+      first(X) = first(X) union first(Y(i))
+    for j = i+1 to k
+      if i=k or {Y(i+1),...Y(k)} subset of nullable then
+        follow(Y(i)) = follow(Y(i)) union follow(X)
+      if i+1=j or {Y(i+1),...,Y(j-1)} subset of nullable then
+        follow(Y(i)) = follow(Y(i)) union first(Y(j))
+until none of nullable,first,follow changed in last iteration
+*)
 //
 implement
 first (syms) = let
@@ -373,8 +425,8 @@ first (syms) = let
       implement
       Production_head_foreach$fwork<env> (p, env) = let
         val Production (lhs, rhs) = lookup (p)
-        val cnt = aux1 (rhs, env, 0)
         val rhs_len = list_length (rhs)
+        val cnt = aux1 (rhs, env, 0)
       in
         if cnt = rhs_len then {
           // all nullable!
@@ -388,23 +440,35 @@ first (syms) = let
   and
   aux1 (syms: List(Symbol), env: &(env) >> _, acc: int): int =
     case+ syms of
-    | list_nil () => acc
+    | list_nil () => ((*println!("aux1: done");*) acc)
     | list_cons (sym, syms) => let
         var env0 = funset_nil {Terminal} ()
-        val fs = aux0 (sym, env0)
+(*
+        val () = println!("aux1 at ", sym)
+*)
+        val () = aux0 (sym, env0)
+(*
+        val () = println!("aux0 gives: ", env0)
+*)
         val containedEPS = funset_remove<Terminal> (env0, sym_EPS)
         val () = env := funset_union (env, env0)
+(*
+        val () = println!("new env: ", env)
+*)
       in
         if containedEPS then aux1 (syms, env, acc+1)
         else acc
       end
   // end of [aux1]
   var env = funset_nil{Terminal} ()
-  val cnt = aux1 (syms, env, 0)
   val len = list_length (syms)
+  val cnt = aux1 (syms, env, 0)
   val () =
     if :(env: termset) => cnt = len then {
       // all nullable!
+(*
+      val () = println!("all nullable!")
+*)
       val _ = funset_insert<Terminal> (env, sym_EPS)
     } (* end of [if] *)
   // end of [val]
@@ -416,85 +480,105 @@ local
 //
 vtypedef env = termset
 //
-extern
 fun
-aux (
+aux0 (
   A: Nonterminal, k: Nonterminal, xs: List(Symbol), env: &(env) >> _
-): void
-//
-implement
-aux (A, k, xs, env) =
+): void =
   case+ xs of
-  | list_nil () => ()
+  | list_nil () => ()(*println!("aux finished")*)
   | list_cons (X, xs) =>
     if X = A then let
+    (*
+      val () = println!("found occurrence of ", A, " in rhs of ", k)
+    *)
     in
       if list_is_cons (xs) then let
         var fb0 = first(xs)
+(*
+        val () = println!("first:", fb0)
+*)
         val containedEPS = funset_remove<Terminal> (fb0, sym_EPS)
+(*
+        val () = println!("contained EPS: ", containedEPS)
+*)
         val () = env := funset_union<Terminal> (env, fb0)
+(*
+        val () = println!("resulting set: ", env)
+*)
       in
         if containedEPS
         then let
-          val fk = follow(k)
-          val () = env := funset_union<Terminal> (env, fk)
+          // FIXME: runaway recursion,
+          // say k = A... or k leads indirectly to A
+          // - is production P visited? if yes, just don't visit it twice
+          val () = aux1 (k, env)
         in
-          aux (A, k, xs, env) // look for other occurrences
+          aux0 (A, k, xs, env) // look for other occurrences
+        end else let
+          // nothing
+        in
+        (*
+          println!("aux finished")
+        *)
+          (*empty*)
         end
       end else let
-        val () = env := funset_union<Terminal> (env, follow (k))
+        val () = aux1 (k, env)
       in
       end
-    end else aux (A, k, xs, env)
-// end of [aux]
+    end else aux0 (A, k, xs, env)
+// end of [aux0]
+
+and aux1 (A: Nonterminal, env: &(env) >> _): void = let
+  // if A is the start nonterminal, put EOF into follow(A)
+  val augmented_sym_opt = the_augmented_sym[]
+  val augmented_sym = option_unsome_exn<Symbol> (the_augmented_sym[])
+  val () =
+    if :(env: termset) => eq_Symbol_Symbol (augmented_sym, A) then let
+
+    val () = println!("follow(", A, "): start nonterminal")
+
+    val _ = funset_insert<Terminal> (env, sym_EOF)
+    in
+      (*empty*)
+    end // end of [val]
+//
+//  val () = println!("follow(", A, ") = ?, see below")
+//
+  // go over all productions
+  val map = get_prods_map ()
+  //
+  implement
+  funmap_foreach$fwork<key,itm><termset> (p, bod, env) = let
+    val Production (lhs, rhs) = bod
+(*
+    val () = print!("production ")
+    val () = print_int (p)
+    val () = println!(": ", lhs, " ::= ...")
+*)
+  in
+    if lhs = A then () // right? skip the rules for the nonterminal itself
+    else
+      aux0 (A, lhs, rhs, env);
+//  println!("aux finished 1")
+  end // end of [funmap_foreach$fwork]
+  // looks like this one doesn't work?
+  val () = funmap_foreach_env<key,itm><termset> (map, env)
+in
+  (*empty*)
+end
 
 in // in of [local]
 
 implement
 follow (A) = let
-//
   var env = funset_nil{Terminal} ()
-//
-  // if A is the start nonterminal, put EOF into follow(A)
-  val () = let
-    val augmented_sym_opt = the_augmented_sym[]
-    val augmented_sym = option_unsome_exn<Symbol> (the_augmented_sym[])
-  in
-    if :(env: termset) => eq_Symbol_Symbol (augmented_sym, A) then {
-      val _ = funset_insert<Terminal> (env, sym_EOF)
-    }
-  end // end of [val]
-//
-  // go over all productions
-  val map = get_prods_map ()
-  implement
-  funmap_foreach$fwork<key,itm><termset> (p, bod, env) = let
-    val Production (lhs, rhs) = bod
-  in
-    aux (A, lhs, rhs, env)
-  end // end of [funmap_foreach$fwork]
-  val () = funmap_foreach_env<key,itm><termset> (map, env)
+  val () = aux1 (A, env)
+
+  val () = println!("follow(", A, ") = ", env)
+
 in
   env
 end // end of [follow]
 
 end // end of [local]
-
-// TODO: LALR(1)
-// - http://web.cs.dal.ca/~sjackson/lalr1.html
-//   "Syntax Analysis Goal: Action and Goto Table"
-// - test first/follow sets
-//
-// build LR(0) item sets and transitions
-// build the translation table
-// - To construct the Translation Table all we need to do is determine what item set to go to next based on a given input.
-// - Item Set nr, Symbol -> Item Set nr (isn't this just the transitions between states??)
-// build extended grammar
-// - extended with a lookahead symbol
-// - For example, if we wanted to start in I0 and follow the rule V → * E
-//   We would start by giving I0 a *.
-//   According to the picture above, this would lead to I2.
-//   We express this as 0*2 (itemset 0, when given a *, leads to itemset 2)
-//
-// 1. determine the first set of every nonterminal in the grammar
-// 2. determine the follow set of every nonterminal in the grammar

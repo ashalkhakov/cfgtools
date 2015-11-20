@@ -22,23 +22,15 @@ PATSCCOMP = $(CC) -D_XOPEN_SOURCE
 ######
 
 SOURCES_SATS += \
-  utils/fundigraph.sats \
-  Grammar.sats \
-  LR0Configuration.sats \
-  LR0.sats
+  fundigraph.sats
 
 SOURCES_DATS += \
-  utils/fundigraph.dats \
-  Grammar.dats \
-  Input.dats \
-  Automaton.dats \
-  LR0Configuration.dats \
-  LR0.dats \
-  main.dats
+  fundigraph.dats \
+  grm.dats
 
 ######
 
-MYTARGET=main
+MYTARGET=grm
 
 ######
 #
