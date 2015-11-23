@@ -529,9 +529,9 @@ implement
 E1_edge_set {n,m} (env, src, dst) = {
   val i = get_arr (env.comp, src)
   val j = get_arr (env.comp, dst)
-
+(*
   val () = fprintln!(stdout_ref, "edge componentized: ", i, "->", j)
-
+*)
   val ncomp = E_ncomp_get (env.comp)
   val ncomp = (i2sz)ncomp
   prval pf_mat = env.pf_adja
@@ -558,19 +558,11 @@ implement
 E1_reachable {n,m} (env, src, dst) = let
   val i = get_arr (env.comp, src)
   val j = get_arr (env.comp, dst)
-//
+(*
   val () = fprint!(
     stdout_ref, "reachable: (src=", src, ",dst=", dst, ") maps to (", i, ",", j, "): result ")
+*)
 //
-in
-//
-if i = j then let
-
-  val () = fprintln! (stdout_ref, "true (same component)")
-
-in
-  true
-end else let
   val ncomp = E_ncomp_get (env.comp)
   val ncomp = (i2sz)ncomp
   prval pf_mat = env.pf_adja
@@ -578,13 +570,11 @@ end else let
   // is component j reachable from component i?
   val res = matrix_get_at_size<bool> (!(p_mat), i, ncomp, j)
   prval () = $effmask_wrt (env.pf_adja := pf_mat)
-
+(*
   val () = fprintln! (stdout_ref, res)
-
+*)
 in
   res
-end // end of [if]
-//
 end // end of [E1_reachable]
 //
 implement
@@ -658,7 +648,9 @@ fundigraph_rtc_init {n} (g) = let
     prval [n:int] EQINT () = eqint_make_guint (n)
     val src = $UN.cast{sizeLt(n)} (src)
     val dst = $UN.cast{sizeLt(n)} (dst)
+    (*
     val () = fprintln!(stdout_ref, "edge: ", src, "->", dst)
+    *)
     val () = E1_edge_set (env, src, dst)
   } (* end of [fundigraph_foreach_edge$fwork] *)
 //
