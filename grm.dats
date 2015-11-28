@@ -208,9 +208,21 @@ implement
 Symbol_is_nonterminal {b} (x) =
   case+ x of Nterm _ => true | Term _ => false
 
-datatype Production = Prod of (Nonterminal, List(Symbol))
+datatype Production = {n:pos} Prod of (Nonterminal, list(Symbol, n))
 // NOTE: store terminals, nonterminals separately in arrays
 // - only give indices into these arrays!
+// - interesting thing: there should a way to disambiguate that
+//   we are looking at a nonterminal or at a terminal
+// - index < 0: it is nonterminal (basically, nonterminals are negative integers)
+// - index >= 0: it is terminal (but terminals are nonnegative integers)
+(*
+store terminals and nonterminals in separate arrays
+- and give a simple "Symbol" handle, which is an integer
+- if integer >= 0, then it's a terminal
+- otherwise, it's a nonterminal (-value - 1 to convert it back into array index)
+  - -1 => -(-1) - 1 => 0
+  - -2 => -(-2) - 1 => 1
+*)
 datatype Grammar = Grammar of (
   // arrayref (Nonterminal, n1)
   // arrayref (Terminal, n2)
@@ -268,6 +280,17 @@ fprint_val<Grammar> (out, gr) = fprint_Grammar (out, gr)
 //
 extern
 fun
+Grammar_alphabet (Grammar): set(Symbol)
+//
+implement
+Grammar_alphabet (gr) = let
+  val Grammar (alphabet, _, _) = gr
+in
+  alphabet
+end // end of [Grammar_alphabet]
+//
+extern
+fun
 Grammar_nonterminals (
   Grammar
 , &ptr? >> arrayptr (Nonterminal, n)
@@ -316,16 +339,116 @@ Grammar_nonterminals (gr, nonterms, nontermmap) = let
   val nodecount = aux0 (0, nodelst, nonterminals, nontermmap)
   val nodecount = (i2sz)nodecount
   val (pf_arr, pf_free | p_arr) = array_ptr_alloc<Nonterminal> (nodecount)
+  val nodelst = list_vt_reverse (nodelst)
   val () = array_copy_from_list_vt (!p_arr, nodelst)
-(*
+
   val () = fprintln!(stdout_ref, "nodes array: ")
   val () = fprint_array (stdout_ref, !p_arr, nodecount)
   val () = fprint_newline (stdout_ref)
-*)
+
+  val () = fprintln!(stdout_ref, "nontermmap: ", nontermmap)
+
   val () = nonterms := arrayptr_encode (pf_arr, pf_free | p_arr)
 in
   nodecount
 end
+//
+(* ****** ****** *)
+//
+extern
+fun
+ERASABLE {n:nat} (
+  Grammar
+, &arrayptr (Nonterminal, n)
+, map (Nonterminal, size_t)
+, size_t n
+) : arrayptr (bool, n)
+//
+implement
+ERASABLE {n} (gr, nterms, ntermmap, nodecount) = let
+  val (pf_arr, pf_arr_free | p_arr) = array_ptr_alloc<bool> (nodecount)
+  val () = array_initize_elt<bool> (!p_arr, nodecount, false)
+  var erasable = arrayptr_encode {bool} (pf_arr, pf_arr_free | p_arr)
+  //
+  // NOTE: the type is curious; the index [n] is hidden to ensure
+  // that templates are instantiated properly
+  vtypedef Env = @([n1:nat | n1 == n] arrayptr (bool, n1), bool(*change*))
+  //
+  val Grammar (alphabet, prods, _) = gr
+  //
+  implement
+  funmap_foreach$fwork<int,Production><Env> (k, x, env) = let
+    val Prod (ntm, rhs) = x
+  in
+    case+ rhs of
+    | list_cons (sym, list_nil ()) when sym = sym_EPS => let
+(*
+        val () = fprint! (stdout_ref, "nonterminal ")
+        val () = fprint_Symbol (stdout_ref, ntm)
+        val () = fprintln! (stdout_ref, " is trivially erasable due to ", x)
+*)
+        var idx : size_t
+        val-true = funmap_search<Nonterminal,size_t> (ntermmap, ntm, idx)
+        prval () = opt_unsome {size_t} (idx)
+        val i = $UN.cast{sizeLt(n)} (idx)
+      in
+        arrayptr_set_at_guint (env.0, i, true)
+      end // end of [let]
+    | _ => ()
+  end // end of [funmap_foreach$fwork]
+  var env = @(erasable, false) : Env
+  val () = funmap_foreach_env<int,Production><Env> (prods, env)
+//
+  fun
+  aux (env: &Env >> _): void = let
+    implement
+    funmap_foreach$fwork<int,Production><Env> (k, x, env) = let
+      val Prod (ntm, rhs) = x
+      val len = list_length(rhs)
+      implement
+      list_iforeach$fwork<Symbol><Env> (i, x, env) = ()
+      implement
+      list_iforeach$cont<Symbol><Env> (_, x, env) =
+        if Symbol_is_terminal (x) then false
+        else let
+          var idx : size_t
+          val-true = funmap_search<Nonterminal,size_t> (ntermmap, x, idx)
+          prval () = opt_unsome {size_t} (idx)
+          val i = $UN.cast{sizeLt(n)} (idx)
+          val res = arrayptr_get_at_guint (env.0, i)
+(*
+          val () = fprint! (stdout_ref, "erasable(")
+          val () = fprint_Symbol (stdout_ref,  x)
+          val () = fprintln! (stdout_ref, ") = ", res)
+*)
+        in
+          res
+        end // end of [list_foreach$cont]
+      val len1 = list_iforeach_env<Symbol><Env> (rhs, env)
+      //
+      val () = fprintln!(stdout_ref, "len = ", len, ", len1 = ", len1)
+      //
+      var idx : size_t
+      val-true = funmap_search<Nonterminal,size_t> (ntermmap, ntm, idx)
+      prval () = opt_unsome {size_t} (idx)
+      val i = $UN.cast{sizeLt(n)} (idx)
+    in
+      if  (len = len1) && (arrayptr_get_at_guint<bool> (env.0, i) = false) then let
+        val () = arrayptr_set_at_guint<bool> (env.0, i, true)
+      in
+        env.1 := true
+      end
+    end // end of [funmap_foreach$fwork]
+    val () = env.1 := false
+    val () = funmap_foreach_env<int,Production><Env> (prods, env)
+    // how to determine if something changed?
+  in
+    if env.1 then aux (env)
+  end // end of [aux]
+  val () = aux (env)
+in
+  env.0
+end // end of [ERASABLE]
 //
 (* ****** ****** *)
 //
@@ -443,142 +566,252 @@ extern
 fun
 FIRSTSETS {n:nat} (
   Grammar
-, &arrayptr (Nonterminal, n)
+, &arrayptr (bool, n) >> _
+, &arrayptr (Nonterminal, n) >> _
 , map (Nonterminal, size_t)
 , size_t n
 ) : arrayptr (set(Terminal), n)
+//
+extern
+fun
+FIRST {n:nat;m:pos} (
+  list(Symbol, m)
+, &arrayptr (bool, n) >> _
+, &arrayptr (Nonterminal, n) >> _
+, map (Nonterminal, size_t)
+, size_t n
+, &arrayptr (set(Terminal), n) >> _
+) : set(Terminal)
 //
 local
 //
 extern
 fun
-INITFIRST (Grammar, Nonterminal): set(Terminal)
+INITFIRST {n:nat} (Grammar, Nonterminal, &arrayptr(bool,n) >> _, map (Nonterminal,size_t), nodecount: size_t(n)): set(Terminal)
 //
 implement
-INITFIRST (gr, X) = let
+INITFIRST {n} (gr, X, erasable, ntermmap, nodecount) = let
 //
-vtypedef Env = set(Terminal)
+vtypedef Env = @([n1:nat | n1 == n] arrayptr (bool, n1), set(Terminal))
 //
 val Grammar (alphabet, prods, _) = gr
 //
 implement
-funmap_foreach$fwork<int,Production><Env> (k, x, env) =
-  if Production_derives(x) = X then let
+funmap_foreach$fwork<int,Production><Env> (k, x, env) = let
+//
+fun
+aux0 (xs: List (Symbol), erasable: &arrayptr (bool, n), res: &set(Terminal) >> _): void =
+  if list_is_cons (xs) then let
+    val+ list_cons (x, xs) = xs
+    prval () = lemma_list_param (xs)
+  in
+    if Symbol_is_terminal (x) then let
+    in
+      if x = sym_EPS then let
+        val () = aux0 (xs, erasable, res)
+      in
+      end else let
+      (*
+        val () = fprintln!(stdout_ref, "inserting!")
+      *)
+        val _ = funset_insert<Terminal> (res, x)
+      in
+        (*empty*)
+      end
+    end else let
+      var idx : size_t
+      val-true = funmap_search<Nonterminal,size_t> (ntermmap, x, idx)
+      prval () = opt_unsome {size_t} (idx)
+      val i = $UN.cast{sizeLt(n)} (idx)
+      val e = arrayptr_get_at_guint (erasable, i)
+    in
+      if e then aux0 (xs, erasable, res)
+    end
+  end // end of [aux0]
+//
+in
+  if :(env: Env) => Production_derives(x) = X then let
     val Prod (_, rhs) = x
     (*
     val () = fprint!(stdout_ref, "working on: ")
     val () = fprint_Production (stdout_ref, x)
     val () = fprint_newline (stdout_ref)
     *)
+    prval () = lemma_arrayptr_param (env.0)
+    var env0 = env.0
+    var env1 = env.1
+    val () = aux0 (rhs, env0, env1)
+    val () = env.0 := env0
+    val () = env.1 := env1
   in
-    case+ rhs of
-    | list_cons (a, rhs) when Symbol_is_terminal (a) => {
-    (*
-      val () = fprintln!(stdout_ref, "inserting!")
-    *)
-      val _ = funset_insert<Terminal> (env, a)
-    } (* end of [if] *)
-    | _ => () // empty??? shouldn't happen (we don't handle EPS, yet)
-  end // end of [funmap_foreach$fwork]
-var env = funset_nil{Terminal} ()
+  end
+end // end of [funmap_foreach$fwork]
+var env = @(erasable, funset_nil{Terminal} ()) : Env
 val () = funmap_foreach_env<int,Production><Env> (prods, env)
+val () = erasable := env.0
+val res = env.1
+prval () = topize (env.1)
 //
 in
-  env
+  res
 end // end of [INITFIRST]
 //
 extern
 fun
 GFIRST {n:nat} (
   Grammar
+, &arrayptr (bool, n) >> _
 , &arrayptr (Nonterminal, n)
 , map (Nonterminal, size_t)
 , size_t (n)
 ): digraph(n)
 implement
-GFIRST (gr, nonterms, nontermmap, nodecount) = let
+GFIRST {n} (gr, erasable, nonterms, nontermmap, nodecount) = let
   typedef nodes = set(Nonterminal)
   val Grammar (alphabet, prods, _) = gr
+//
+vtypedef Env = @([n1:nat | n1 == n] arrayptr (bool, n1), [n1:nat | n1 == n] digraph (n1))
+//
+fun
+aux0 (x: Nonterminal, j: sizeLt(n), ys: List (Symbol), env: &Env >> _): void =
+  if list_is_cons (ys) then let
+    val+ list_cons (y, ys) = ys
+  in
+    if Symbol_is_nonterminal (y) then let
+      var idx_y : size_t
+      val-true = funmap_search<Nonterminal,size_t> (nontermmap, y, idx_y)
+      prval () = opt_unsome {size_t} (idx_y)
+      val i = $UN.cast{sizeLt(n)} (idx_y)
 
+      val () = fprint!(stdout_ref, "firstset: considering edge ")
+      val () = fprint_Symbol (stdout_ref, x)
+      val () = fprint!(stdout_ref, " to ")
+      val () = fprint_Symbol (stdout_ref, y)
+      val () = fprint_newline (stdout_ref)
+
+    in
+      if i <> j then let
+        val nil = arrayptr_get_at_guint<bool> (env.0, i)
+      in
+        if nil = false then let
+
+          val () = fprint!(stdout_ref, "found an edge from: ")
+          val () = fprint_Symbol (stdout_ref, x)
+          val () = fprint!(stdout_ref, " to: ")
+          val () = fprint_Symbol (stdout_ref, y)
+          val () = fprint_newline (stdout_ref)
+
+          val _ = fundigraph_insert_edge (env.1, j, i)
+        in
+          (*empty*)
+        end else let
+          val () = fprintln!(stdout_ref, "skipping, because nilable")
+        in
+          aux0 (x, j, ys, env) // nilable
+          (*empty*)
+        end
+      end
+    end
+  end // end of [aux0]
+//
   implement
-  funmap_foreach$fwork<Nonterminal,size_t><digraph> (ntm, idx, env) = let
+  funmap_foreach$fwork<Nonterminal,size_t><Env> (ntm, idx, env) = let
     implement
-    funmap_foreach$fwork<int,Production><digraph> (k, x, env) =
+    funmap_foreach$fwork<int,Production><Env> (k, x, env) =
       if Production_derives(x) = ntm then let
-(*
+
         val () = fprintln!(stdout_ref, "considering production: ", x)
-*)
+
         // production is of the form ntm -> rhs
         val Prod (_, rhs) = x
+        var idx : size_t
+        val-true = funmap_search<Nonterminal,size_t> (nontermmap, ntm, idx)
+        prval () = opt_unsome {size_t} (idx)
+        val i = $UN.cast{sizeLt(n)} (idx)
+
+        val () = fprint_Symbol (stdout_ref, ntm)
+        val () = fprintln!(stdout_ref, " maps to ", i)
+
       in
-        case+ rhs of
-        | list_cons (y, _) when Symbol_is_nonterminal (y) =>
-          // production is of the form ntm -> y rhs, where y is some nonterminal
-          if y <> ntm then {
-(*
-            val () = fprint!(stdout_ref, "found edge from: ")
-            val () = fprint_Symbol (stdout_ref, ntm)
-            val () = fprint!(stdout_ref, " to: ")
-            val () = fprint_Symbol (stdout_ref, y)
-            val () = fprint_newline (stdout_ref)
-*)
-            var idx_y : size_t
-            val-true = funmap_search<Nonterminal,size_t> (nontermmap, y, idx_y)
-            prval () = opt_unsome {size_t} (idx_y)
-            val n = fundigraph_size (env)
-            prval [n:int] EQINT () = eqint_make_guint (n)
-            val idx = $UN.cast{sizeLt(n)} (idx)
-            val idx_y = $UN.cast{sizeLt(n)} (idx_y)
-            val _ = fundigraph_insert_edge (env, idx_y, idx)
-          } (* end of [if] *)
-        | list_cons (y, _) => ()
-        | list_nil () => ()
+        aux0 (ntm, i, rhs, env)
       end // end of [funmap_foreach$fwork]
   in
-    funmap_foreach_env<int,Production><digraph> (prods, env)
+    funmap_foreach_env<int,Production><Env> (prods, env)
   end
-  var graph = fundigraph_make (nodecount)
-  val () = funmap_foreach_env<Nonterminal,size_t><digraph> (nontermmap, graph)
+  var env = @(erasable, fundigraph_make (nodecount)) : Env
+  val () = funmap_foreach_env<Nonterminal,size_t><Env> (nontermmap, env)
 //
-  val nsz = fundigraph_size (graph)
-  val () = assert_errmsg (nsz = nodecount, "digraph vertex count changed!")
+  val () = erasable := env.0
+  val res = env.1
+  prval () = topize (env.1)
+//
+  val () = fprintln!(stdout_ref, "GFIRST(gr) = ")
+  val () = fprint_fundigraph (stdout_ref, res)
+  val () = fprint_newline (stdout_ref)
 //
 in
-  graph
+  res
 end // end of [GFIRST]
 //
 in // in of [local]
 //
 implement
-FIRSTSETS (
+FIRSTSETS {n} (
   gr
+, erasable
 , nterms
 , nontermmap
 , nodecount
 ) = let
   // compute the GFIRST graph
-  val gfirst = GFIRST (gr, nterms, nontermmap, nodecount)
+  val gfirst = GFIRST (gr, erasable, nterms, nontermmap, nodecount)
 
   // allocate init and final arrays
   val (pf_init, pf_init_free | p_init) = array_ptr_alloc<set(Terminal)> (nodecount)
   val (pf_fin, pf_fin_free | p_fin) = array_ptr_alloc<set(Terminal)> (nodecount)
+  //
+  typedef T = set(Terminal)
   // for each nonterminal, obtain its INITFIRST set
-  implement
-  array_mapto$fwork<Nonterminal><set(Terminal)> (ntm, init) = {
-    val () = init := INITFIRST (gr, ntm)
-    (*
+  var i: int = 0
+  prval [lres:addr] EQADDR () = eqaddr_make_ptr (p_init)
+  var p = p_init
+  prvar pf0 = array_v_nil {T} ()
+  prvar pf1 = pf_init
+  //
+  val () =
+  while* {i:nat | i <= n} .<n-i>. (
+    i: int (i)
+  , p: ptr (lres + i*sizeof(T))
+  , pf0: array_v (T, lres, i)
+  , pf1: array_v (T?, lres+i*sizeof(T), n-i)
+  ) : (
+    pf0: array_v (T, lres, n)
+  , pf1: array_v (T?, lres+i*sizeof(T), 0)
+  ) => (
+    (i2sz)i < nodecount
+  ) {
+  //
+    prval (pf_at, pf1_res) = array_v_uncons {T?} (pf1)
+    prval () = pf1 := pf1_res
+    val ntm = nterms[i]
+    val e = INITFIRST (gr, ntm, erasable, nontermmap, nodecount)
+(*
     val () = fprintln! (stdout_ref, "for nonterminal: ")
     val () = fprint_Symbol (stdout_ref, ntm)
     val () = fprint_newline (stdout_ref)
     val () = fprintln! (stdout_ref, "the termset is:")
-    val () = fprint_funset<Terminal> (stdout_ref, init)
+    val () = fprint_funset<Terminal> (stdout_ref, e)
     val () = fprint_newline (stdout_ref)
-    *)
-  } (* end of [array_mapto$fwork] *)
-  val p_arrnode = arrayptr2ptr (nterms)
-  prval pf_arrnode = arrayptr_takeout (nterms)
-  val () = array_mapto<Nonterminal><set(Terminal)> (!p_arrnode, !p_init, nodecount)
-  prval () = arrayptr_addback (pf_arrnode | nterms)
+*)
+    val () = ptr_set<T> (pf_at | p, e)
+    val () = p := ptr1_succ<T> (p)
+    prval () = pf0 := array_v_extend {T} (pf0, pf_at)
+    val () = i := i + 1
+  //
+  } // end of [val]
+  //
+  prval () = pf_init := pf0
+  prval () = array_v_unnil {T?} (pf1)
   //
 (*
   val () = fprintln! (stdout_ref, "calling gsolve: ")
@@ -591,6 +824,54 @@ in
   arrayptr_encode (pf_fin, pf_fin_free | p_fin)
 end // end of [FIRSTSETS]
 //
+implement
+FIRST {n,m} (xs, erasable, nterms, ntermmap, nodecount, fsets) = let
+  //
+  fun
+  is_erasable (x: Symbol, erasable: &arrayptr (bool, n)): bool =
+    if Symbol_is_terminal (x) then (x = sym_EPS)
+    else let
+      var idx : size_t
+      val-true = funmap_search<Nonterminal,size_t> (ntermmap, x, idx)
+      prval () = opt_unsome {size_t} (idx)
+      val i = $UN.cast{sizeLt(n)} (idx)
+    in
+      arrayptr_get_at_guint<bool> (erasable, i)
+    end
+  // end of [is_erasable]
+  fun
+  aux (sym: Symbol, fsets: &arrayptr (set(Terminal), n), res: &set(Terminal) >> _):void =
+    if Symbol_is_terminal (sym) then {
+      val _ = funset_insert<Terminal> (res, sym)
+    } else {
+      var idx : size_t
+      val-true = funmap_search<Nonterminal,size_t> (ntermmap, sym, idx)
+      prval () = opt_unsome {size_t} (idx)
+      val i = $UN.cast{sizeLt(n)} (idx)
+      val fs = fsets[i]
+      val () = res := funset_union<Terminal> (fs, res)
+    } (* end of [aux] *)
+  // end of [aux]
+  fun
+  loop {m:nat} (
+    syms: list (Symbol, m)
+  , erasable: &arrayptr (bool, n)
+  , fsets: &arrayptr (set(Terminal), n)
+  , res: &set(Terminal) >> _
+  ): void =
+    case+ syms of
+    | list_nil () => ()
+    | list_cons (x, xs) => let
+        val () = aux (x, fsets, res)
+      in
+        if is_erasable (x, erasable) then loop (xs, erasable, fsets, res)
+      end // end of [loop]
+  var res = funset_nil {Terminal} ()
+  val () = loop (xs, erasable, fsets, res)
+in
+  res
+end // end of [FIRST]
+//
 end // end of [local]
 //
 (* ****** ****** *)
@@ -599,9 +880,10 @@ extern
 fun
 FOLLOWSETS {n:nat} (
   Grammar
-, &arrayptr (Nonterminal, n) (*numbered nonterminals*)
+, &arrayptr (bool, n) >> _
+, &arrayptr (Nonterminal, n) >> _ (*numbered nonterminals*)
 , map (Nonterminal, size_t) (*nontermmap*)
-, &arrayptr (set(Terminal), n)(*first sets*)
+, &arrayptr (set(Terminal), n) >> _ (*first sets*)
 , size_t n
 ): arrayptr (set(Terminal), n)(*follow sets*)
 //
@@ -612,6 +894,7 @@ fun
 INITFOLLOW {n:nat} (
   Grammar
 , Nonterminal(*nonterminal*)
+, &arrayptr (bool, n)
 , &arrayptr (Nonterminal, n)(*numbered nonterminals*)
 , map (Nonterminal, size_t)
 , &arrayptr (set(Terminal), n)(*first sets*)
@@ -619,7 +902,8 @@ INITFOLLOW {n:nat} (
 ): set(Terminal)
 //
 typedef STATENODE (n:int) = @{
-  nterms= ptr
+  erasable= ptr
+, nterms= ptr
 , ntermmap= ptr
 , fsets= ptr
 , nodecount= size_t n
@@ -633,7 +917,8 @@ vtypedef STATE = [n:nat] STATE (n)
 extern
 fun
 STATE_init {n:int} (
-  nterms: arrayptr (Nonterminal, n)(*numbered nonterminals*)
+  erasable: arrayptr (bool, n)
+, nterms: arrayptr (Nonterminal, n)(*numbered nonterminals*)
 , ntermmap: map (Nonterminal, size_t)
 , fsets: arrayptr (set(Terminal), n)(*first sets*)
 , nodecount: size_t n
@@ -643,7 +928,8 @@ STATE_init {n:int} (
 extern
 fun
 STATE_getres_free {n:nat} (
-  &ptr? >> arrayptr (Nonterminal, n)(*numbered nonterminals*)
+  &ptr? >> arrayptr (bool, n)
+, &ptr? >> arrayptr (Nonterminal, n)(*numbered nonterminals*)
 , &ptr? >> arrayptr (set(Terminal), n)(*first sets*)
 , &STATE (n) >> STATENODE0
 ) : set(Terminal)
@@ -654,7 +940,7 @@ STATE_get_nodecount {n:nat} (&STATE (n)): size_t(n)
 //
 extern
 fun
-STATE_scan {n,nxs:nat} (
+STATE_scan {n:nat;nxs:pos} (
   env: &STATE (n) >> STATE (n)
 , X: Nonterminal
 , xs: list (Symbol, nxs)
@@ -668,7 +954,8 @@ typedef T = Terminal
 typedef S = Symbol
 //
 assume STATE (n:int) = @{
-  nterms= arrayptr (Nonterminal, n)(*numbered nonterminals*)
+  erasable= arrayptr (bool, n)
+, nterms= arrayptr (Nonterminal, n)(*numbered nonterminals*)
 , ntermmap= map (Nonterminal, size_t)
 , fsets= arrayptr (set(Terminal), n)(*first sets*)
 , nodecount= size_t n
@@ -678,7 +965,7 @@ assume STATE (n:int) = @{
 in // in of [local]
 //
 implement
-STATE_init {n} (nterms, ntermmap, fsets, nodecount, env) = let
+STATE_init {n} (erasable, nterms, ntermmap, fsets, nodecount, env) = let
 //
   prval () = let
     extern praxi
@@ -692,10 +979,12 @@ STATE_init {n} (nterms, ntermmap, fsets, nodecount, env) = let
     prfun
     arrayptr_zero_free {a:t0p}{l:addr} (arrayptr (INV(a), l, 0)):<> void
   in
+    arrayptr_zero_free (env.erasable);
     arrayptr_zero_free (env.nterms);
     arrayptr_zero_free (env.fsets)
   end
 //
+  val () = env.erasable := erasable
   val () = env.nterms := nterms
   val () = env.ntermmap := ntermmap
   val () = env.fsets := fsets
@@ -707,8 +996,9 @@ in
 end // end of [STATE_init]
 //
 implement
-STATE_getres_free {n} (nterms, fsets, env) = let
+STATE_getres_free {n} (erasable, nterms, fsets, env) = let
   val res = env.result
+  val () = erasable := env.erasable
   val () = nterms := env.nterms
   val () = fsets := env.fsets
   prval () = __assert (env) where {
@@ -739,26 +1029,11 @@ STATE_scan {n,nxs} (env, X, xs) = let
   // end of [notfound]
   and
   found {nxs:nat} (X:N, xs: list (S, nxs), env: &STATE(n) >> STATE(n)): void =
-    case+ xs of
-    | list_cons (a, xs) => (
-      if :(env: STATE(n)) => Symbol_is_terminal (a) then let
-        val _ = funset_insert<T> (env.result, a)
-      in
-        notfound (X, xs, env)
-      end else let (* a is nonterminal *)
-        var a_id : size_t
-        val-true = funmap_search<Nonterminal,size_t> (env.ntermmap, a, a_id)
-        prval () = opt_unsome {size_t} (a_id)
-        val a_id = $UN.cast{sizeLt(n)} (a_id)
-        val fst = arrayptr_get_at_guint<tset> (env.fsets, a_id)
-        val res1 = env.result
-        val () = env.result := funset_union<T> (res1, fst)
-      in
-        notfound (X, xs, env)
-      end // end of [if]
-    ) (* end of [list_cons] *)
-    | list_nil () => ((*stop*))
-  // end of [found]
+    if list_is_cons (xs) then let
+      val fst = FIRST (xs, env.erasable, env.nterms, env.ntermmap, env.nodecount, env.fsets)
+      val () = env.result := funset_union<Terminal> (env.result, fst)
+    in
+    end // end of [found]
 in
   notfound (X, xs, env)
 end // end of [STATE_scan]
@@ -766,10 +1041,11 @@ end // end of [STATE_scan]
 end // end of [local]
 //
 implement
-INITFOLLOW {n} (gr, A, nterms, ntermmap, fsets, nodecount) = let
+INITFOLLOW {n} (gr, A, erasable, nterms, ntermmap, fsets, nodecount) = let
   //
   val Grammar (alphabet, prods, _) = gr
   //
+  val p_erasable = arrayptr2ptr (erasable)
   val p_nterms = arrayptr2ptr (nterms)
   val p_fsets = arrayptr2ptr (fsets)
   //
@@ -782,14 +1058,16 @@ INITFOLLOW {n} (gr, A, nterms, ntermmap, fsets, nodecount) = let
   end // end of [funmap_foreach$fwork]
   //
   var env: STATENODE0
-  val () = STATE_init (nterms, ntermmap, fsets, nodecount, env)
+  val () = STATE_init (erasable, nterms, ntermmap, fsets, nodecount, env)
   val () = funmap_foreach_env<int,Production><STATE> (prods, env)
   val nodecount1 = STATE_get_nodecount (env)
   val () = assert_errmsg (nodecount = nodecount1, "node count changed!")
-  val res = STATE_getres_free (nterms, fsets, env)
+  val res = STATE_getres_free (erasable, nterms, fsets, env)
   //
+  val p_erasable1 = arrayptr2ptr (erasable)
   val p_nterms1 = arrayptr2ptr (nterms)
   val p_fsets1 = arrayptr2ptr (fsets)
+  val () = assert_errmsg (p_erasable = p_erasable1, "erasable changed!")
   val () = assert_errmsg (p_nterms = p_nterms1, "nterms changed!")
   val () = assert_errmsg (p_fsets = p_fsets1, "fsets changed!")
   //
@@ -801,74 +1079,117 @@ extern
 fun
 GFOLLOW {n:nat} (
   Grammar
-, &arrayptr (Nonterminal, n)
+, &arrayptr (bool, n) >> _
+, &arrayptr (Nonterminal, n) >> _
 , map (Nonterminal, size_t)
 , size_t (n)
 ): digraph (n)
 //
 implement
-GFOLLOW {n} (gr, nonterms, nontermmap, nodecount) = let
+GFOLLOW {n} (gr, erasable, nonterms, nontermmap, nodecount) = let
   typedef nodes = set(Nonterminal)
   val Grammar (alphabet, prods, _) = gr
+//
+  val () = fprintln!(stdout_ref, "computing GFOLLOW")
+//
+  vtypedef Env = @([n1:nat | n1 == n] arrayptr (bool, n1), [n1:nat | n1 == n] digraph (n1))
 
+  // there is an edge from nonterminal A to nonterminal B if:
+  // - there is a production B->alpha A, or
+  // - there is a production B->alpha A A1...Ak, s.t. E(A1) = ... = E(Ak) = true
+//
   implement
-  funmap_foreach$fwork<Nonterminal,size_t><digraph> (ntm, idx, env) = let
+  funmap_foreach$fwork<Nonterminal,size_t><Env> (A, idx, env) = let
+    val idx = $UN.cast{sizeLt(n)} (idx)
+
+    val () = fprint!(stdout_ref, "considering nonterminal: ")
+    val () = fprint_Symbol (stdout_ref, A)
+    val () = fprint_newline (stdout_ref)
+
     implement
-    funmap_foreach$fwork<int,Production><digraph> (k, x, env) =
-      if Production_derives(x) <> ntm then let
-(*
+    funmap_foreach$fwork<int,Production><Env> (k, x, env) = let
+      val B = Production_derives (x)
+    in
+      if B <> A then let
+
         val () = fprintln!(stdout_ref, "considering production: ", x)
-*)
-        // production is of the form ntm -> rhs
+
+        // production is of the form B -> rhs, where A <> B
         val Prod (_, rhs) = x
         prval () = lemma_list_param (rhs)
-      in
-        if list_is_nil (rhs) then ((*empty*))
-        else let
-          val y = list_last (rhs)
-        in
-          if Symbol_is_nonterminal (y) then {
-            // production is of the form ntm -> alpha y,
-            // where y is some nonterminal (y <> ntm)
-            //
-            // add the edge!
-(*
-            val () = fprint!(stdout_ref, "found edge from: ")
-            val () = fprint_Symbol (stdout_ref, ntm)
-            val () = fprint!(stdout_ref, " to: ")
-            val () = fprint_Symbol (stdout_ref, y)
-            val () = fprint_newline (stdout_ref)
-*)
-            var idx_y : size_t
-            val-true = funmap_search<Nonterminal,size_t> (nontermmap, y, idx_y)
-            prval () = opt_unsome {size_t} (idx_y)
-            val n = fundigraph_size (env)
-            prval [n:int] EQINT () = eqint_make_guint (n)
-            val idx = $UN.cast{sizeLt(n)} (idx)
-            val idx_y = $UN.cast{sizeLt(n)} (idx_y)
-            val _ = fundigraph_insert_edge (env, idx, idx_y)
-          } (* end of [if] *)
-        end // end of [let]
-      end // end of [funmap_foreach$fwork]
-  in
-    funmap_foreach_env<int,Production><digraph> (prods, env)
-  end
-  var graph = fundigraph_make (nodecount)
-  val () = funmap_foreach_env<Nonterminal,size_t><digraph> (nontermmap, graph)
 //
-  val nsz = fundigraph_size (graph)
-  val () = assert_errmsg (nsz = nodecount, "digraph vertex count changed!")
+        fun
+        loop {m:nat} (rhs: list_vt (Symbol, m), B: Nonterminal, A: Nonterminal, j: sizeLt(n), env: &Env >> _): void =
+          case+ rhs of
+          | ~list_vt_nil () => ()
+          | ~list_vt_cons (y, rhs) =>
+            if Symbol_is_nonterminal (y) then let
+              var idx_y : size_t
+              val-true = funmap_search<Nonterminal,size_t> (nontermmap, y, idx_y)
+              prval () = opt_unsome {size_t} (idx_y)
+              val i = $UN.cast{sizeLt(n)} (idx_y)
+              val nil = arrayptr_get_at_guint<bool> (env.0, i)
+            in
+              if nil then loop (rhs, B, A, j, env)
+              else if y = A then let
+                // production is of the form B -> alpha A beta
+                val () = list_vt_free<Symbol> (rhs)
+                var idx_B : size_t
+                val-true = funmap_search<Nonterminal,size_t> (nontermmap, B, idx_B)
+                prval () = opt_unsome {size_t} (idx_B)
+                val i = $UN.cast{sizeLt(n)} (idx_B)
+
+                val () = fprint!(stdout_ref, "found edge from: ")
+                val () = fprint_Symbol (stdout_ref, A)
+                val () = fprint!(stdout_ref, "(", j, ")")
+                val () = fprint!(stdout_ref, " to: ")
+                val () = fprint_Symbol (stdout_ref, B)
+                val () = fprint!(stdout_ref, "(", i, ")")
+                val () = fprint_newline (stdout_ref)
+
+                // only add if it isn't already there?
+                val _ = fundigraph_insert_edge (env.1, j, i)
+              in
+                (*empty*)
+              end else let
+                val () = list_vt_free<Symbol> (rhs)
+              in
+                (*empty*)
+              end // end of [if]
+            end else let
+              val () = list_vt_free<Symbol> (rhs)
+            in
+              (*empty*)
+            end // end of [loop]
+        val rhs = list_reverse (rhs)
+      in
+        loop (rhs, B, A, idx, env)
+      end
+    end // end of [funmap_foreach$fwork]
+  in
+    funmap_foreach_env<int,Production><Env> (prods, env)
+  end
+//
+  var env = @(erasable, fundigraph_make (nodecount)) : Env
+  val () = funmap_foreach_env<Nonterminal,size_t><Env> (nontermmap, env)
+  val () = erasable := env.0
+  val res = env.1
+  prval () = topize (env.1)
+//
+  val () = fprintln!(stdout_ref, "GFOLLOW(gr) = ")
+  val () = fprint_fundigraph (stdout_ref, res)
+  val () = fprint_newline (stdout_ref)
 //
 in
-  graph
+  res
 end // end of [GFOLLOW]
 //
 in // in of [local]
-
+//
 implement
-FOLLOWSETS {n} (gr, nterms, nontermmap, fsets, nodecount) = let
+FOLLOWSETS {n} (gr, erasable, nterms, nontermmap, fsets, nodecount) = let
   // compute the GFOLLOW graph
-  val gfollow = GFOLLOW (gr, nterms, nontermmap, nodecount)
+  val gfollow = GFOLLOW (gr, erasable, nterms, nontermmap, nodecount)
   // allocate init and final arrays
   val (pf_init, pf_init_free | p_init) = array_ptr_alloc<set(Terminal)> (nodecount)
   val (pf_fin, pf_fin_free | p_fin) = array_ptr_alloc<set(Terminal)> (nodecount)
@@ -879,6 +1200,7 @@ FOLLOWSETS {n} (gr, nterms, nontermmap, fsets, nodecount) = let
   initflw_initize{n:int} (
     A: &(@[T?][n]) >> @[T][n]
   , asz: size_t n
+  , erasable: &arrayptr (bool, n)
   , nterms: &arrayptr (Nonterminal, n) (*numbered nonterminals*)
   , ntermmap: map (Nonterminal, size_t) (*nontermmap*)
   , fsets: &arrayptr (set(Terminal), n)(*first sets*)
@@ -891,6 +1213,7 @@ FOLLOWSETS {n} (gr, nterms, nontermmap, fsets, nodecount) = let
   (
     pf: !V (T?, l, n) >> V (T, l, n)
   | p: ptr l, n: size_t n, i: size_t i
+  , erasable: &arrayptr (bool, m)
   , nterms: &arrayptr (Nonterminal, m) (*numbered nonterminals*)
   , nontermmap: map (Nonterminal, size_t) (*nontermmap*)
   , fsets: &arrayptr (set(Terminal), m)(*first sets*)
@@ -899,9 +1222,9 @@ FOLLOWSETS {n} (gr, nterms, nontermmap, fsets, nodecount) = let
     if n > 0 then let
       prval (pf1, pf2) = array_v_uncons (pf)
       val ntm = arrayptr_get_at_guint (nterms, i)
-      val () = !p := INITFOLLOW (gr, ntm, nterms, nontermmap, fsets, nodecount)
+      val () = !p := INITFOLLOW (gr, ntm, erasable, nterms, nontermmap, fsets, nodecount)
       val () = loop (
-        pf2 | ptr1_succ<T> (p), pred(n), succ(i), nterms, nontermmap, fsets, nodecount
+        pf2 | ptr1_succ<T> (p), pred(n), succ(i), erasable, nterms, nontermmap, fsets, nodecount
       ) (* end of [val] *)
       prval () = pf := array_v_cons{T}(pf1, pf2)
     in
@@ -918,12 +1241,12 @@ FOLLOWSETS {n} (gr, nterms, nontermmap, fsets, nodecount) = let
   in
     loop (
       view@ (A)
-    | addr@ (A), asz, i2sz(0), nterms, nontermmap, fsets, asz
+    | addr@ (A), asz, i2sz(0), erasable, nterms, nontermmap, fsets, asz
     )
   end // end of [initflw_initize]
   //
   // for each nonterminal, obtain its INITFOLLOW set
-  val () = initflw_initize (!p_init, nodecount, nterms, nontermmap, fsets)
+  val () = initflw_initize (!p_init, nodecount, erasable, nterms, nontermmap, fsets)
   //
   (*
   val () = fprintln!(stdout_ref, "INITFOLLOW array:")
@@ -954,10 +1277,157 @@ dynload "./fundigraph.dats"
 
 (* ****** ****** *)
 
+fun
+test00_fun (gr: Grammar): void = let
+//
+val () = fprintln!(stdout_ref, "grammar: ", gr)
+//
+var alphabet = Grammar_alphabet (gr)
+//
 implement
-main0 () = let
+funset_filter$pred<Symbol> (x) = case+ x of Nterm _ => false | _ => true
+implement(env)
+funset_filter$fwork<Symbol><env> (x, env) = fprint_Symbol (stdout_ref, x)
+//
+var env: void
+val () = fprint!(stdout_ref, "terminals:")
+val () = funset_filter_env<Symbol> (alphabet, env)
+//
+implement
+funset_filter$pred<Symbol> (x) = case+ x of Nterm _ => true | _ => false
+implement(env)
+funset_filter$fwork<Symbol><env> (x, env) =
+  (fprint_Symbol (stdout_ref, x); fprint_newline (stdout_ref))
+val () = fprint!(stdout_ref, "nonterminals:")
+val nonterminals = funset_filter_env<Symbol> (alphabet, env)
+//
+(*
+val () = fprint!(stdout_ref, "productions starting with: ")
+val () = fprint_Symbol (stdout_ref, _sE)
+val () = fprint_newline (stdout_ref)
+implement
+funmap_filter$pred<int,Production> (k, x) = Production_derives (x) = _sE
+implement(env)
+funmap_filter$fwork<int,Production><env> (k, x, env) = fprintln!(stdout_ref, x)
+val () = funmap_filter_env<int,Production> (prods, env)
+*)
+//
+(*
+val () = fprintln!(stdout_ref, "INITFIRST(E) = ", INITFIRST (gr, _sE))
+val () = fprintln!(stdout_ref, "INITFIRST(S) = ", INITFIRST (gr, _sS))
+val () = fprintln!(stdout_ref, "INITFIRST(F) = ", INITFIRST (gr, _sF))
+*)
+//
+(*
+var nnode_gfirst: size_t
+var arrnode: ptr
+val gfirst = GFIRST (gr, nnode_gfirst, arrnode)
+val () = fprintln!(stdout_ref, "GFIRST(gr) = ")
+val () = fprint_fundigraph (stdout_ref, gfirst)
+val () = fprint_newline (stdout_ref)
+val () = arrayptr_free (arrnode)
+*)
+//
+var nonterms: ptr
+var nontermmap: ptr
+val nodecount = Grammar_nonterminals (gr, nonterms, nontermmap)
+prval () = lemma_g1uint_param (nodecount)
 
+val () = fprintln!(stdout_ref, "calling ERASABLE")
+var erasable = ERASABLE (gr, nonterms, nontermmap, nodecount)
+val () = fprintln!(stdout_ref, "erasable array:")
+val () = fprint_arrayptr<bool> (stdout_ref, erasable, nodecount)
+val () = fprint_newline (stdout_ref)
+
+val () = fprintln!(stdout_ref, "calling FIRSTSETS")
+var fstsets = FIRSTSETS (gr, erasable, nonterms, nontermmap, nodecount)
+//
+val () = fprintln!(stdout_ref, "FIRSTSETS(gr) = ")
+val () = fprintln!(stdout_ref, "nonterminals array:")
+val () = fprint_arrayptr<Nonterminal> (stdout_ref, nonterms, nodecount)
+val () = fprint_newline (stdout_ref)
+//
+val () = fprintln!(stdout_ref, "first set termsets array:")
+implement
+fprint_val<set(Terminal)> (out, x) = let
+  val () = fprintln!(out, "{")
+  val () = fprint_funset<Terminal> (out, x)
+  val () = fprint!(out, "}")
+in
+end // end of [fprint_val]
+val () = fprint_arrayptr<set(Terminal)> (stdout_ref, fstsets, nodecount)
+val () = fprint_newline (stdout_ref)
+//
+var flwsets = FOLLOWSETS (gr, erasable, nonterms, nontermmap, fstsets, nodecount)
+//
+val () = fprintln!(stdout_ref, "followset termsets array:")
+implement
+fprint_val<set(Terminal)> (out, x) = let
+  val () = fprintln!(out, "{")
+  val () = fprint_funset<Terminal> (out, x)
+  val () = fprint!(out, "}")
+in
+end // end of [fprint_val]
+val () = fprint_arrayptr<set(Terminal)> (stdout_ref, flwsets, nodecount)
+val () = fprint_newline (stdout_ref)
+//
+val () = arrayptr_free (erasable)
+val () = arrayptr_free (nonterms)
+val () = arrayptr_free (fstsets)
+val () = arrayptr_free (flwsets)
+//
+in
+end // end of [test00_fun]
+//
+fun
+test00_A (): void = let
+//
+val () = fprintln!(stdout_ref, "BEGIN of test00_A")
+//
 // setup a simple grammar
+val _sS' = Nterm("S'")
+val _sS = Nterm("S")
+val _sL = Nterm("L")
+val _sR = Nterm("R")
+val _sSTAR = Term("*")
+val _sEQUALS = Term("=")
+val _sID = Term("id")
+
+val xs =
+$list_vt{Symbol}(_sS', _sS, _sL, _sR, _sSTAR, _sEQUALS, _sID, sym_EOF, sym_EPS)
+var alphabet = funset_make_list ($UN.list_vt2t(xs))
+val () = list_vt_free (xs)
+
+var prods = funmap_make_nil{int,Production} ()
+var res: Production
+val-false = funmap_insert (prods, 0, Prod (_sS', $list{Symbol}(_sS, sym_EOF)), res)
+prval () = opt_clear (res)
+val-false = funmap_insert (prods, 1, Prod (_sS, $list{Symbol}(_sL, _sEQUALS, _sR)), res)
+prval () = opt_clear (res)
+val-false = funmap_insert (prods, 2, Prod (_sS, $list{Symbol}(_sR)), res)
+prval () = opt_clear (res)
+val-false = funmap_insert (prods, 3, Prod (_sL, $list{Symbol}(_sSTAR, _sR)), res)
+prval () = opt_clear (res)
+val-false = funmap_insert (prods, 4, Prod (_sL, $list{Symbol}(_sID)), res)
+prval () = opt_clear (res)
+val-false = funmap_insert (prods, 5, Prod (_sR, $list{Symbol}(_sL)), res)
+prval () = opt_clear (res)
+//
+var gr = Grammar (alphabet, prods, 0(*start rule*))
+//
+in
+//
+test00_fun (gr);
+//
+fprintln!(stdout_ref, "END of test00_A")
+//
+end // end of [test00_A]
+//
+fun
+test00_B (): void = let
+//
+val () = fprintln!(stdout_ref, "BEGIN of test00_B")
+//
 val _sS = Nterm("S")
 val _sE = Nterm("E")
 val _sT = Nterm("T")
@@ -992,93 +1462,19 @@ val-false = funmap_insert (prods, 6, Prod (_sF, $list{Symbol}(_sMINUS, _sT)), re
 prval () = opt_clear (res)
 val-false = funmap_insert (prods, 7, Prod (_sF, $list{Symbol}(_sa)), res)
 prval () = opt_clear (res)
-
+//
 var gr = Grammar (alphabet, prods, 0(*start rule*))
-
-val () = fprintln!(stdout_ref, "grammar: ", gr)
 //
-implement
-funset_filter$pred<Symbol> (x) = case+ x of Nterm _ => false | _ => true
-implement(env)
-funset_filter$fwork<Symbol><env> (x, env) = fprint_Symbol (stdout_ref, x)
-//
-var env: void
-val () = fprint!(stdout_ref, "terminals:")
-val () = funset_filter_env<Symbol> (alphabet, env)
-//
-implement
-funset_filter$pred<Symbol> (x) = case+ x of Nterm _ => true | _ => false
-implement(env)
-funset_filter$fwork<Symbol><env> (x, env) =
-  (fprint_Symbol (stdout_ref, x); fprint_newline (stdout_ref))
-val () = fprint!(stdout_ref, "nonterminals:")
-val nonterminals = funset_filter_env<Symbol> (alphabet, env)
-//
-val () = fprint!(stdout_ref, "productions starting with: ")
-val () = fprint_Symbol (stdout_ref, _sE)
-val () = fprint_newline (stdout_ref)
-implement
-funmap_filter$pred<int,Production> (k, x) = Production_derives (x) = _sE
-implement(env)
-funmap_filter$fwork<int,Production><env> (k, x, env) = fprintln!(stdout_ref, x)
-val () = funmap_filter_env<int,Production> (prods, env)
-//
-(*
-val () = fprintln!(stdout_ref, "INITFIRST(E) = ", INITFIRST (gr, _sE))
-val () = fprintln!(stdout_ref, "INITFIRST(S) = ", INITFIRST (gr, _sS))
-val () = fprintln!(stdout_ref, "INITFIRST(F) = ", INITFIRST (gr, _sF))
-*)
-//
-(*
-var nnode_gfirst: size_t
-var arrnode: ptr
-val gfirst = GFIRST (gr, nnode_gfirst, arrnode)
-val () = fprintln!(stdout_ref, "GFIRST(gr) = ")
-val () = fprint_fundigraph (stdout_ref, gfirst)
-val () = fprint_newline (stdout_ref)
-val () = arrayptr_free (arrnode)
-*)
-//
-var nonterms: ptr
-var nontermmap: ptr
-val nodecount = Grammar_nonterminals (gr, nonterms, nontermmap)
-
-val () = fprintln!(stdout_ref, "calling FIRSTSETS")
-prval () = lemma_g1uint_param (nodecount)
-var fstsets = FIRSTSETS (gr, nonterms, nontermmap, nodecount)
-//
-val () = fprintln!(stdout_ref, "FIRSTSETS(gr) = ")
-val () = fprintln!(stdout_ref, "nonterminals array:")
-val () = fprint_arrayptr<Nonterminal> (stdout_ref, nonterms, nodecount)
-val () = fprint_newline (stdout_ref)
-//
-val () = fprintln!(stdout_ref, "first set termsets array:")
-implement
-fprint_val<set(Terminal)> (out, x) = let
-  val () = fprintln!(out, "{")
-  val () = fprint_funset<Terminal> (out, x)
-  val () = fprint!(out, "}")
 in
-end // end of [fprint_val]
-val () = fprint_arrayptr<set(Terminal)> (stdout_ref, fstsets, nodecount)
-val () = fprint_newline (stdout_ref)
 //
-var flwsets = FOLLOWSETS (gr, nonterms, nontermmap, fstsets, nodecount)
+test00_fun (gr);
+fprintln!(stdout_ref, "END of test00_B")
 //
-val () = fprintln!(stdout_ref, "followset termsets array:")
+end // end of [test00_B]
+//
 implement
-fprint_val<set(Terminal)> (out, x) = let
-  val () = fprintln!(out, "{")
-  val () = fprint_funset<Terminal> (out, x)
-  val () = fprint!(out, "}")
-in
-end // end of [fprint_val]
-val () = fprint_arrayptr<set(Terminal)> (stdout_ref, flwsets, nodecount)
-val () = fprint_newline (stdout_ref)
-//
-val () = arrayptr_free (nonterms)
-val () = arrayptr_free (fstsets)
-val () = arrayptr_free (flwsets)
-//
+main0 () = let
+  val () = test00_A ()
+  val () = test00_B ()
 in
 end

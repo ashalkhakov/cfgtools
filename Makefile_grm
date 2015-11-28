@@ -26,6 +26,7 @@ SOURCES_SATS += \
 
 SOURCES_DATS += \
   fundigraph.dats \
+  stapool.dats \
   grm.dats
 
 ######

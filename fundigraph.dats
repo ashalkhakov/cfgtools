@@ -24,12 +24,22 @@ fundigraph_insert_edge {n,i,j} (dg, src, dst) = let
   val Digraph (sz, aref) = dg
   var adj = arrayref_get_at (aref, src)
   val dst = (g0ofg1)dst
-  // NOTE: we should be checking for duplicates here!
+  // check for duplicates
+  fun
+  aux {m:nat} (xs: list (size_t, m)): bool =
+    case+ xs of
+    | list_cons (x, xs) => if x = dst then true else aux (xs)
+    | list_nil () => false
+  // end of [aux]
   prval () = lemma_list_param (adj)
-  val adj = list_cons (dst, adj)
-  val () = arrayref_set_at (aref, src, adj)
+  val ex = aux (adj)
 in
-  (*empty*)
+  if ~ex then let
+    val adj = list_cons (dst, adj)
+    val () = arrayref_set_at (aref, src, adj)
+  in
+    (*empty*)
+  end // end of [if]
 end // end of [fundigraph_insert_edge]
 
 implement
