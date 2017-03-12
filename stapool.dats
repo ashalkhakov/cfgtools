@@ -7,143 +7,184 @@
 
 (* ****** ****** *)
 //
-// HX: subview relation that only allows *reading*
-//
-absprop vsubr_p (v1:view+, v2: view-) // v2 -<prf> [v:iew] @(v1, v)
-stadef <= (v1:view, v2:view) = vsubr_p (v1, v2)
-//
-// HX: subview relation that allows *reading* and *writing*
-//
-absprop vsubw_p (v1:view, v2: view) // v2 -<prf> @(v1, v1 -<lin,prf> v2)
-//
-
-extern
-prfun vsubr_intr {v1,v2:view}
-(fpf: v2 -<prf> [v:view] (v1, v)): vsubr_p (v1, v2)
-// implemented in [vsubrw.dats]
-extern
-prfun vsubr_elim {v1,v2:view}
-(pf: vsubr_p (v1, v2)):<> v2 -<prf> [v:view] (v1, v)
-// implemented in [vsubrw.dats]
-extern
-prfun vsubr_refl {v:view} (): vsubr_p (v, v)
-extern
-prfun vsubr_trans {v1,v2,v3:view}
-(pf12: vsubr_p (v1, v2), pf23: vsubr_p (v2, v3)): vsubr_p (v1, v3)
-// end of [vcontain_trans]
-extern
-prfun vsubr_of_vsubw {v1,v2:view} (pf: vsubw_p (v1, v2)): vsubr_p (v1, v2)
-extern
-prfun vsubr_tup_2_0 {v0,v1:view} (): vsubr_p (v0, @(v0, v1))
-extern
-prfun vsubr_tup_2_1 {v0,v1:view} (): vsubr_p (v1, @(v0, v1))
-(* ****** ****** *)
-extern
-prfun vsubw_intr {v1,v2:view}
-(fpf: v2 -<prf> (v1, v1 -<lin,prf> v2)): vsubw_p (v1, v2)
-// implemented in [vsubrw.dats]
-extern
-prfun vsubw_elim {v1,v2:view}
-(pf: vsubw_p (v1, v2)):<> v2 -<prf> (v1, v1 -<lin,prf> v2)
-// implemented in [vsubrw.dats]
-extern
-prfun vsubw_tup_2_0 {v0,v1:view} (): vsubw_p (v0, @(v0, v1))
-extern
-prfun vsubw_tup_2_1 {v0,v1:view} (): vsubw_p (v1, @(v0, v1))
-(* ****** ****** *)
-extern
-prval vsubw_array_elt :
-{a:viewt@ype} {n,i:nat | i < n} {l:addr}
-() -<> vsubw_p (a @ l + i*sizeof(a), @[a][n] @ l)
-extern
-prval vsubw_array_subarray :
-{a:viewt@ype} {n0,i,n:nat | i+n <= n0} {l:addr}
-() -<> vsubw_p (@[a][n] @ l + i*sizeof(a), @[a][n0] @ l)
-
-(* ****** ****** *)
-//
-absvt@ype stapool_vt (a:t@ype, int, int, addr) = @(ptr, size_t, ptr)
-vtypedef stapool_vt0 (a:t@ype) = stapool_vt (a, 0, 0, null)?
-vtypedef stapool_vt1 (a:t@ype, n:int, l:addr) = [i:int | i <= n] stapool_vt (a, i, n, l)
-//
-abstype pptr (a:t@ype, addr) = ptr
-//
-extern
-fun{a:t@ype}
-stapool_init {n:int} {l:addr} (
-  array_v (a?, l, n)
-| ptr l
-, size_t n
-, &stapool_vt0 (a) >> stapool_vt (a, 0, n, l)
-): void
+typedef STAPOOL (n:int, m:int, l:addr) = @(size_t n, size_t m, ptr l)
+absvt@ype stapool_vt (a:t@ype, n:int, m:int) = [l:addr] STAPOOL (n, m, l)
+typedef stapool_vt0 = STAPOOL (0, 0, null)
+vtypedef stapool_vt1 (a:t@ype, n:int) = [i:int | i <= n] stapool_vt (a, i, n)
 //
 extern
 prfun
-stapool_free {a:t@ype} {n,m:int} {l:addr} (
+lemma_stapool_param {a:t@ype} {n,m:int} (
+  !stapool_vt (a, n, m)
+): [n >= 0; m >= 0; n <= m] void
+//
+extern
+fun{a:t@ype}
+stapool_init {n:int} (
+  &stapool_vt0? >> stapool_vt (a, 0, n)
+, size_t n
+): void
+//
+extern
+fun{}
+stapool_free {a:t@ype} {n,m:int} (
   // NB. the type given to buf after returning
   // is the same as what it was prior to [stapool_init]
-  !stapool_vt (a, n, m, l) >> stapool_vt0 (a)
-): array_v (a?, l, m)
+  !stapool_vt (a, n, m) >> stapool_vt0?
+): void
+//
 extern
 fun{a:t@ype}
-stapool_is_full {n,m:int} {l:addr} (
-  &stapool_vt (a, n, m, l) >> _
+stapool_used {n,m:int} (&stapool_vt (a, n, m)): size_t n
+//
+extern
+fun{a:t@ype}
+stapool_isnot_full {n,m:int} (
+  &stapool_vt (a, n, m)
 ): bool (n < m)
 //
+typedef pptr (n:int) = natLt(n)
+//
 extern
 fun{a:t@ype}
-stapool_alloc {n,m:int | n < m} {l:addr} (
-  &stapool_vt (a, n, m, l) >> stapool_vt (a, n+1, m, l)
+stapool_alloc {n,m:int | n < m} (
+  &stapool_vt (a, n, m) >> stapool_vt (a, n+1, m)
 , a
-): pptr (a, l)
+): pptr (n+1)
+//
+(*
+extern
+fun{a:t@ype}
+stapool_read {n,m:int} (
+  &stapool_vt (a, n, m)
+, natLt(n)
+): a
 //
 extern
 fun{a:t@ype}
-pptr_read {n,m:int} {l:addr} (&stapool_vt (a, n, m, l), pptr (a, l)): a
+stapool_write {n,m:int} (
+  &stapool_vt (a, n, m) >> stapool_vt (a, n, m)
+, natLt(n)
+, a
+): void*)
+//
+extern
+fun{a:t@ype}{env:vt@ype}
+stapool_foreach$fwork (size_t(*idx*), a, &(env) >> _): void
+//
+extern
+fun{a:t@ype}{env:vt@ype}
+stapool_foreach_env {n,m:int} (
+  &stapool_vt (a, n, m), &(env) >> _
+): void
 //
 extern
 fun{a:t@ype}
-pptr_write {n,m:int} {l:addr} (&stapool_vt (a, n, m, l), pptr (a, l), a): void
+pptr_read
+  {n0,n,m:int | n0 <= n}
+  (&stapool_vt (a, n, m), pptr (n0)): a
+//
+extern
+fun{a:t@ype}
+pptr_write
+  {n0,n,m:int | n0 <= n}
+  (&stapool_vt (a, n, m), pptr (n0), a): void
 //
 (* ****** end of [stapool.sats] ****** *)
 
 //
 local
 //
+staload UN = "prelude/SATS/unsafe.sats"
+//
+vtypedef varr_vt (a:t@ype, n:int, m:int, l:addr) = (
+  array_v (a, l, n)
+, array_v (a?, l + n*sizeof(a), m-n)
+, mfree_gc_v (l)
+| ptr l
+) (* end of [varr_vt] *)
 // NB. the structure of the type closely follows
 // the structure given in the interface; we are only
 // allowed to refine the tuple elements, but not
 // add some new elements, even if we only add proofs
 // NB. we don't add a top-level constraint to the top (e.g. [n>=0])
-assume stapool_vt (a:t@ype, n:int, m:int, l:addr) = @(
-  (array_v (a, l, n), array_v (a?, l + n*sizeof(a), m-n) | ptr (l + n*sizeof(a)))
+assume stapool_vt (a:t@ype, n:int, m:int) = @(
+  size_t n
 , size_t m
-, ptr l
+, [l:addr] varr_vt (a, n, m, l)
 ) (* end of [buf_vt] *)
 //
-assume pptr (a:t@ype, l:addr) = [n,m:nat;l1:addr] (
-  {n1:nat | n <= n1; n1 <= m} () -<> vsubw_p (a @ l1, array_v (a, l, n1))
-, int n
-, int m
-| ptr l1
-) (* end of [pptr] *)
+extern
+fun{a:vt@ype}
+ptr1_diff {l:addr} {i:nat} (p0: ptr l, p1: ptr (l+i*sizeof(a))): size_t i
+implement{a}
+ptr1_diff {l} {i} (p0, p1) = let
+  prval () = lemma_sizeof {a} ()
+  prval pf1_mul = mul_make {i,sizeof(a)} ()
+  prval () = mul_nat_nat_nat {i,sizeof(a)} (pf1_mul)
+  prval () = prop_verify_and_add {l <= l+i*sizeof(a)} ()
+  val diff = sub_ptr1_ptr1 (p1, p0)
+  prval [i0:int] EQINT () = eqint_make_gint (diff)
+  prval () = prop_verify_and_add {i0 >= 0} ()
+  val diff = g1int2uint_ssize_size {i0} (diff)
+  prval () = prop_verify_and_add {i*sizeof(a) == i0} ()
+//
+  prval () = __assert () where {
+    extern
+    praxi __assert (): [sizeof(a) > 0] void
+  } (* end of [prval] *)
+//
+  val [q,r:int] (
+    pf_divmod:DIVMOD(i*sizeof(a),sizeof(a),q,r) | res
+  ) = g1uint_div2 {i*sizeof(a),sizeof(a)} (diff, sizeof<a>)
+//
+  prval () = __lemma {i,sizeof(a)} {i*sizeof(a),q,r} (pf1_mul, pf_divmod) where {
+    // if [y] is one of divisors of [x], then we can
+    // divide [x] by [y] with no remainder
+    extern
+    prfun __lemma {x,y:int | x >= 0; y > 0} {p,q,r:int} (
+      pf_mul: MUL (x,y,p), pf_divmod: DIVMOD (p,y,q,r)
+    ): [r==0;q==x] void
+  } (* end of [prval] *)
+//
+in
+  res
+end // end of [ptr1_diff]
 //
 in (* of [local] *)
 //
 implement{a}
-stapool_init {n} {l} (pf_bytes | p, n, buf) = () where {
+stapool_init {n} (buf, n) = {
+  val (pf_bytes, pf_free | p_arr) = array_ptr_alloc<a> (n)
   prval () = lemma_array_v_param {a?} (pf_bytes)
-  prval () = $effmask_wrt (buf.0.0 := array_v_nil {a} ())
-  prval () = $effmask_wrt (buf.0.1 := pf_bytes)
-  val () = buf.0.2 := p
+  val () = buf.0 := (i2sz)0
   val () = buf.1 := n
-  val () = buf.2 := p
+
+  val () = __cast (buf.2) where {
+    extern
+    castfn
+    __cast (!ptr (null)? >> varr_vt (a, 0, 0, null)): void
+  } (* end of [prval] *)
+
+  prval () = __discard (buf.2.0, buf.2.1, buf.2.2) where {
+    extern
+    prfun
+    __discard (
+      array_v (a, null, 0)
+    , array_v (a?, null + 0*sizeof(a), 0)
+    , mfree_gc_v (null)
+    ): void
+  } (* end of [prval] *)
+  prval () = $effmask_wrt (buf.2.0 := array_v_nil {a} ())
+  prval () = $effmask_wrt (buf.2.1 := pf_bytes)
+  prval () = $effmask_wrt (buf.2.2 := pf_free)
+  val () = buf.2.3 := p_arr
 } (* end of [stapool_init] *)
 //
-primplement
-stapool_free {a} {m,n} {l} (buf) = let
+implement{}
+stapool_free {a} {m,n} (buf) = let
 //
-val (pf1_arr, pf2_arr) = (buf.0.0, buf.0.1)
+val (pf1_arr, pf2_arr, pf_free | p) = buf.2
 //
 prval pf1_arr = __trustme {a} (pf1_arr) where {
   // can be proven by induction over [n] using [topize]
@@ -151,122 +192,91 @@ prval pf1_arr = __trustme {a} (pf1_arr) where {
   prval __trustme : {a:t@ype} {l:addr} {n:int} array_v (INV(a), l, n) -<> array_v (a?, l, n)
 } // end of [prval]
 //
+prval pf_arr = array_v_unsplit {a?} (pf1_arr, pf2_arr)
+//
+val () = array_ptr_free {a} (pf_arr, pf_free | p)
+//
 in
-  array_v_unsplit {a?} (pf1_arr, pf2_arr)
 end // end of [stapool_free]
 //
 implement{a}
-stapool_is_full {n,m} {l} (buf) = let
-//
-extern
-castfn
-lemma1 : {lb:addr;a,b:nat} (bool (lb+a < lb+b)) -> bool (a < b)
-//
-extern
-castfn
-lemma2 : {a:pos;x,y:nat} (bool (x*a < y*a)) -> bool (x < y)
-//
-extern
-prval lemma3 : {a:t@ype} () -> [sizeof(a) == sizeof(a?)] void
-//
-extern
-prval lemma4 : () -<> [sizeof(a) > 0] void
-//
-val p_end = ptr1_add_guint<a> (buf.2, buf.1)
-val res = buf.0.2 < p_end // buf.1 < buf.2
-//
-prval () = lemma4 () // in general, [a] could be [void] (of size 0), but that is unusable
-prval () = lemma_array_v_param {a} (buf.0.0)
-prval () = lemma_array_v_param {a?} (buf.0.1)
-prval () = mul_gte_gte_gte {n,sizeof(a)} ()
-prval () = mul_gte_gte_gte {m,sizeof(a)} ()
-val res = lemma1 {l,n*sizeof(a),m*sizeof(a)} (res)
-val res = lemma2 {sizeof(a),n,m} (res)
-//
-in
-//
-res
-//
-end // end of [stapool_is_full]
+stapool_isnot_full {n,m} (buf) = buf.0 < buf.1
 //
 implement{a}
-stapool_alloc {n,m} {l} (buf, x) = let
-  prval pf1_arr = buf.0.0
-  prval (pf1_at, pf2_arr) = array_v_uncons {a?} {l+n*sizeof(a)} (buf.0.1)
-  val p = buf.0.2
+stapool_used {n,m} (buf) = buf.0
+//
+implement{a}
+stapool_alloc {n,m} (buf, x) = let
+  val (pf1_arr, pf2_arr, pf_free | p_buf) = buf.2
+  prval [l:addr] EQADDR () = eqaddr_make_ptr (p_buf)
+  prval () = lemma_array_v_param (pf1_arr)
+  prval () = lemma_array_v_param (pf2_arr)
+  prval (pf1_at, pf2_arr) = array_v_uncons {a?} {l+n*sizeof(a)} (pf2_arr)
+  prval () = lemma_array_v_param (pf1_arr)
+  val p = ptr1_add_guint<a> (p_buf, buf.0)
   prval [l1:addr] EQADDR () = eqaddr_make_ptr (p)
   val () = ptr_set<a> (pf1_at | p, x)
-  //
-  prval () = lemma_array_v_param (pf1_arr)
-  prval n = praxi_int{n} ()
-  prval m = praxi_int{m} ()
-  prval pf = __trustme where {
-    // can be derived if needed
-    extern
-    prval __trustme : {n1:nat | n <= n1; n1 <= m} () -<> vsubw_p (a @ l1, array_v (a, l, n1))
-  }
-  //
-  val () = buf.0.2 := ptr1_succ (p)
-//  val () = buf.1 := succ (buf.1)
+  val i = buf.0
+  val () = buf.0 := succ (buf.0)
   prval pf1_arr = array_v_extend (pf1_arr, pf1_at)
-  // why does it complain about wrt effect?
-  prval () = $effmask_wrt (buf.0.0 := pf1_arr)
-  prval () = $effmask_wrt (buf.0.1 := pf2_arr)
+  val () = buf.2 := (pf1_arr, pf2_arr, pf_free | p_buf)
 in
-  #[n,m,l1 | (pf, n, m | p)]
+  (sz2i)i
 end // end of [stapool_alloc]
 //
+(*
 implement{a}
-pptr_read {n1,m1} {l} (buf, r) = let
-//
-val (pf_sub, n, m | p) = r
-prval [n:int] EQINT () = eqint_make_gint (n)
-prval [m:int] EQINT () = eqint_make_gint (m)
-//
-extern
-prval lemma1 (): [n <= n1; n1 <= m] void // NOTE: we never "unbump" the pointer
-//
-extern
-prval lemma2 (): [m1 == m] void
-//
-prval () = lemma1 ()
-prval () = lemma2 ()
-//  
-prval pf_sub0 = pf_sub {n1} ()
-//
-prval fpf0 = vsubw_elim (pf_sub0)
-prval (pf_at, fpf1) = fpf0 (buf.0.0)
-val res = ptr_get<a> (pf_at | p)
-prval () = $effmask_wrt (buf.0.0 := fpf1 (pf_at))
-//
+stapool_read {n,m} (buf, i) = let
+  prval pf_arr = buf.0.0
+  val p_arr = buf.2
+  val res = array_get_at_gint<a> (!p_arr, i)
+  prval () = $effmask_wrt (buf.0.0 := pf_arr)
 in
+  res
+end // end of [stapool_read]
 //
-res
+implement{a}
+stapool_write {n,m} (buf, i, x) = {
 //
+  prval pf_arr = buf.0.0
+  val p_arr = buf.2
+  val () = array_set_at_gint<a> (!p_arr, i, x)
+  prval () = $effmask_wrt (buf.0.0 := pf_arr)
+//
+} (* end of [stapool_write] *)
+*)
+//
+implement{a}{env}
+stapool_foreach$fwork (idx, x, env) = ()
+//
+implement{a}{env}
+stapool_foreach_env {n,m} (buf, env) = {
+  implement
+  array_iforeach$cont<a><env> (i, x, env) = true
+  implement
+  array_iforeach$fwork<a><env> (i, x, env) =
+    stapool_foreach$fwork (i, x, env)
+  val n = stapool_used<a> (buf)
+  val (pf1_arr, pf2_arr, pf_free | p_buf) = buf.2
+  val _ = array_iforeach_env<a><env> (!p_buf, n, env)
+  val () = buf.2 := (pf1_arr, pf2_arr, pf_free | p_buf)
+} (* end of [stapool_foreach_env] *)
+//
+implement{a}
+pptr_read {n0,n1,m1} (buf, i) = let
+  val (pf1_arr, pf2_arr, pf_free | p_buf) = buf.2
+  val res = array_get_at_gint<a> (!p_buf, i)
+  prval () = $effmask_wrt (buf.2 := (pf1_arr, pf2_arr, pf_free | p_buf))
+in
+  res
 end // end of [pptr_read]
 //
 implement{a}
-pptr_write {n1,m1} {l} (buf, r, x) = let
+pptr_write {n0,n1,m1} (buf, r, x) = let
 //
-val (pf_sub, n, m | p) = r
-prval [n:int] EQINT () = eqint_make_gint (n)
-prval [m:int] EQINT () = eqint_make_gint (m)
-//
-extern
-prval lemma1 (): [n <= n1; n1 <= m] void // NOTE: we never "unbump" the pointer
-//
-extern
-prval lemma2 (): [m1 == m] void
-//
-prval () = lemma1 ()
-prval () = lemma2 ()
-//  
-prval pf_sub0 = pf_sub {n1} ()
-//
-prval fpf0 = vsubw_elim (pf_sub0)
-prval (pf_at, fpf1) = fpf0 (buf.0.0)
-val () = ptr_set<a> (pf_at | p, x)
-prval () = $effmask_wrt (buf.0.0 := fpf1 (pf_at))
+  val (pf1_arr, pf2_arr, pf_free | p_buf) = buf.2
+  val () = array_set_at_gint<a> (!p_buf, r, x)
+  prval () = $effmask_wrt (buf.2 := (pf1_arr, pf2_arr, pf_free | p_buf))
 //
 in
 end // end of [pptr_write]

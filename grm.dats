@@ -119,13 +119,15 @@ in
 end
 // ------------------
 
-datatype Symbol (b:bool) = Nterm (false) of string | Term(true) of string
+abst@ype Symbol (b:bool) = ptr
 typedef Terminal = Symbol(true)
 typedef Nonterminal = Symbol(false)
 typedef Symbol = [b:bool] Symbol (b)
 
-val sym_EOF = Term("EOF")
-val sym_EPS = Term("EPS")
+extern
+val sym_EOF: Terminal
+extern
+val sym_EPS: Terminal
 
 extern
 fun
@@ -139,6 +141,45 @@ extern
 fun
 fprint_Terminal (FILEref, Terminal): void
 overload fprint with fprint_Terminal of 10
+
+extern
+fun
+compare_Symbol_Symbol (x: Symbol, y: Symbol):<> int
+overload compare with compare_Symbol_Symbol
+extern
+fun
+eq_Symbol_Symbol (x: Symbol, y: Symbol):<> bool
+overload = with eq_Symbol_Symbol
+extern
+fun
+neq_Symbol_Symbol (x: Symbol, y: Symbol):<> bool
+overload <> with neq_Symbol_Symbol
+
+extern
+fun
+Symbol_is_terminal {b:bool} (Symbol b): bool b
+extern
+fun
+Symbol_is_nonterminal {b:bool} (Symbol b): bool (~b)
+
+extern
+fun
+Symbol_terminal (string): Terminal
+extern
+fun
+Symbol_nonterminal (string): Nonterminal
+
+local
+
+datatype SYMBOL (b:bool) = Nterm (false) of string | Term(true) of string
+assume Symbol (b:bool) = SYMBOL (b)
+
+in // in of [local]
+
+implement
+sym_EOF = Term("EOF")
+implement
+sym_EPS = Term("EPS")
 
 implement
 fprint_Symbol (out, sym) =
@@ -157,19 +198,6 @@ implement
 fprint_val<Terminal> (out, sym) = fprint_Symbol (out, sym)
 implement
 fprint_val<Nonterminal> (out, sym) = fprint_Symbol (out, sym)
-
-extern
-fun
-compare_Symbol_Symbol (x: Symbol, y: Symbol):<> int
-overload compare with compare_Symbol_Symbol
-extern
-fun
-eq_Symbol_Symbol (x: Symbol, y: Symbol):<> bool
-overload = with eq_Symbol_Symbol
-extern
-fun
-neq_Symbol_Symbol (x: Symbol, y: Symbol):<> bool
-overload <> with neq_Symbol_Symbol
 
 implement
 compare_Symbol_Symbol (x, y) =
@@ -194,13 +222,6 @@ compare_elt_elt<Nonterminal> (x, y) = $effmask_all (compare_Symbol_Symbol (x, y)
 implement
 compare_key_key<Nonterminal> (x, y) = $effmask_all (compare_Symbol_Symbol (x, y))
 
-extern
-fun
-Symbol_is_terminal {b:bool} (Symbol b): bool b
-extern
-fun
-Symbol_is_nonterminal {b:bool} (Symbol b): bool (~b)
-
 implement
 Symbol_is_terminal {b} (x) =
   case+ x of Nterm _ => false | Term _ => true
@@ -208,32 +229,16 @@ implement
 Symbol_is_nonterminal {b} (x) =
   case+ x of Nterm _ => true | Term _ => false
 
-datatype Production = {n:pos} Prod of (Nonterminal, list(Symbol, n))
-// NOTE: store terminals, nonterminals separately in arrays
-// - only give indices into these arrays!
-// - interesting thing: there should a way to disambiguate that
-//   we are looking at a nonterminal or at a terminal
-// - index < 0: it is nonterminal (basically, nonterminals are negative integers)
-// - index >= 0: it is terminal (but terminals are nonnegative integers)
-(*
-store terminals and nonterminals in separate arrays
-- and give a simple "Symbol" handle, which is an integer
-- if integer >= 0, then it's a terminal
-- otherwise, it's a nonterminal (-value - 1 to convert it back into array index)
-  - -1 => -(-1) - 1 => 0
-  - -2 => -(-2) - 1 => 1
-*)
-datatype Grammar = Grammar of (
-  // arrayref (Nonterminal, n1)
-  // arrayref (Terminal, n2)
-  // map (int, Production1) where Production1 = Prod (NonterminalNr, List(SymbolNr))
-  //    where SymbolNr = NT of NonterminalNr | T of TerminalNr
-  //    or just: SymbolList = List(@(bool,size_t)) // true,1 -> ntm...
-  set (Symbol)
-, map (int, Production)
-, int(*start prod*)
-)
+implement
+Symbol_terminal (lab) = Term(lab)
+implement
+Symbol_nonterminal (lab) = Nterm(lab)
 
+end // end of [local]
+
+(* ****** ****** *)
+
+datatype Production = {n:pos} Prod of (Nonterminal, list(Symbol, n))
 extern
 fun
 fprint_Production (FILEref, Production): void
@@ -252,6 +257,32 @@ fprint_val<Production> (out, prod) = fprint_Production (out, prod)
 
 extern
 fun
+compare_Production_Production (Production, Production):<> int
+implement
+compare_Production_Production (p1, p2) = let
+  val+Prod (lhs1, rhs1) = p1
+  val+Prod (lhs2, rhs2) = p2
+  val res = compare (lhs1, lhs2)
+  fun
+  aux {m1,m2:nat} .<max(m1,m2)>. (rhs1: list (Symbol, m1), rhs2: list (Symbol, m2)):<> int =
+    case+ (rhs1, rhs2) of
+    | (list_nil (), _) => ~1
+    | (_, list_nil ()) => 1
+    | (list_cons (x1, rhs1), list_cons (x2, rhs2)) => let
+        val res = compare (x1, x2)
+      in
+        if res = 0 then aux (rhs1, rhs2)
+        else res
+      end // end of [aux]
+in
+  if res = 0 then aux (rhs1, rhs2)
+  else res
+end // end of [compare_Production_Production]
+implement
+compare_key_key<Production> (p1, p2) = compare_Production_Production (p1, p2)
+
+extern
+fun
 Production_derives (Production): Nonterminal
 implement
 Production_derives (prod) = let
@@ -259,35 +290,168 @@ Production_derives (prod) = let
 in
   ntm
 end
-
+//
+(* ****** ****** *)
+//
+abstype Grammar = ptr
+//
+extern
+fun
+Grammar_get_syms (Grammar): set(Symbol)
+extern
+fun
+Grammar_get_prods (Grammar): map (Production, size_t(*tag*))
+extern
+fun
+Grammar_make_nil (): Grammar
+extern
+fun
+Grammar_add_terminal (&Grammar >> _, string): Terminal
+extern
+fun
+Grammar_add_nonterminal (&Grammar >> _, string): Nonterminal
+extern
+fun
+Grammar_add_empty_production (&Grammar >> _, Nonterminal): size_t
+extern
+fun
+Grammar_add_production {n:pos} (&Grammar >> _, Nonterminal, list(Symbol, n)): size_t
+extern
+fun
+Grammar_set_start (&Grammar >> _, size_t(*tag*)): void
+extern
+fun
+Grammar_get_start (Grammar): size_t
+//
 extern
 fun
 fprint_Grammar (FILEref, Grammar): void
 overload fprint with fprint_Grammar
+//
+(* ****** ****** *)
+//
+local
+//
+datatype GRAMMAR = Grammar of (
+  set (Symbol) // symbols
+, map (Production, size_t(*tag*))
+  // API for productions?
+  // - alloc: {r:rgn} (size_t(*size*)) -> Productions(r)
+  // - new : {n:pos} (Productions(r), Nonterminal(r), list(Symbol(r), n)) -> Prod(r)
+  // - lhs : (Productions(r), Prod(r)) -> Nonterminal(r)
+  // - rhs : (Productions(r), Prod(r)) -> [n:pos] list(Symbol(r), n)
+  // - foreach$fwork : {env:vt0p} {n:pos} (Prod(r), Nonterminal(r), list(Symbol (r), n), &(env) >> _) -> void
+  // - foreach_env : {env:vt0p} (Productions(r), &(env) >> _) -> void
+  //
+  // API for grammar?
+  // - alloc: () -> [r:rgn] Grammar(r)
+  // - productions : Grammar(r) -> Productions(r)
+  // - alphabet : Grammar(r) -> Symbols(r)
+  // - start_set : (Grammar(r), Prod(r)) -> void
+  // - start_get : Grammar(r) -> Prod(r)
+  // - easier thing to do? below (if grammar becomes linear, it is easier for us to modify it)
+  //   - otherwise, we'd have to invent some tricks for multiple takeouts and such, probably
+  // - modify$fwork : {env:vt0p} {r:rgn} (&Symbols(r) >> _, &Productions(r) >> _, &Prod(r) >> _, &(env) >> _): void
+  // - modify : {env:vt0p} {r:rgn} (Grammar(r), &(env) >> _): void
+, size_t(*start prod*)
+, int(*nprods*)
+) (* end of [GRAMMAR] *)
+assume Grammar = GRAMMAR
+//
+in // in of [local]
+//
+implement
+Grammar_get_syms (g) = let
+  val Grammar (syms, prods, st, _) = g
+in
+  syms
+end
+implement
+Grammar_get_prods (g) = let
+  val Grammar (syms, prods, st, _) = g
+in
+  prods
+end
+implement
+Grammar_set_start (g, x) = {
+  val Grammar (syms, prods, st, nprods) = g
+  val-true = x >= 0
+  val-true = x < nprods
+  val () = g := Grammar (syms, prods, x, nprods)
+}
+implement
+Grammar_get_start (g) = let
+  val Grammar (syms, prods, st, _) = g
+in
+  st
+end
+implement
+Grammar_make_nil () = let
+  val syms = funset_make_nil {Symbol} ()
+  val prods = funmap_make_nil {Production,size_t} ()
+  val res = Grammar (syms, prods, (i2sz)0, 0)
+in
+  res
+end
+implement
+Grammar_add_terminal (gr, lab) = let
+  val sym = Symbol_terminal(lab)
+  val+Grammar (syms, prods, st, nprods) = gr
+  var syms = syms
+  val _ = funset_insert<Symbol> (syms, sym)
+  val () = gr := Grammar (syms, prods, st, nprods)
+in
+  sym
+end
+implement
+Grammar_add_nonterminal (gr, lab) = let
+  val sym = Symbol_nonterminal(lab)
+  val+Grammar (syms, prods, st, nprods) = gr
+  var syms = syms
+  val _ = funset_insert<Symbol> (syms, sym)
+  val () = gr := Grammar (syms, prods, st, nprods)
+in
+  sym
+end
+implement
+Grammar_add_empty_production (gr, lhs) = let
+  val res = Grammar_add_production (gr, lhs, $list{Symbol} (sym_EPS))
+in
+  res
+end // end of [Grammar_add_empty_production]
+implement
+Grammar_add_production (gr, lhs, rhs) = let
+  val prod = Prod (lhs, rhs)
+  val+Grammar (syms, prods, st, nprods) = gr
+  val tag = nprods
+  val nprods = nprods + 1
+  var res: size_t
+  var prods = prods
+  val tag = g0int2uint_int_size (tag)
+  val-false = funmap_insert<Production,size_t> (prods, prod, tag, res)
+  prval () = opt_clear (res)
+  val () = gr := Grammar (syms, prods, st, nprods)
+in
+  tag
+end
+//
 implement
 fprint_Grammar (out, gr) = {
-val Grammar (alphabet, prods, start) = gr
+val Grammar (alphabet, prods, start, _) = gr
 val () = fprintln!(out, "alphabet:")
 val () = fprint_funset<Symbol> (stdout_ref, alphabet)
 val () = fprint_newline (out)
 val () = fprintln!(out, "productions:")
-val () = fprint_funmap<int,Production> (stdout_ref, prods)
+val () = fprint_funmap<Production, size_t> (stdout_ref, prods)
 val () = fprint_newline (out)
 val () = fprintln!(out, "start production:", start)
 }
 implement
 fprint_val<Grammar> (out, gr) = fprint_Grammar (out, gr)
 //
-extern
-fun
-Grammar_alphabet (Grammar): set(Symbol)
+end // end of [local]
 //
-implement
-Grammar_alphabet (gr) = let
-  val Grammar (alphabet, _, _) = gr
-in
-  alphabet
-end // end of [Grammar_alphabet]
+(* ****** ****** *)
 //
 extern
 fun
@@ -299,7 +463,8 @@ Grammar_nonterminals (
 //
 implement
 Grammar_nonterminals (gr, nonterms, nontermmap) = let
-  val Grammar (alphabet, prods, _) = gr
+  val alphabet = Grammar_get_syms (gr)
+  val prods = Grammar_get_prods (gr)
   fun
   aux0 {n:nat} (
     nxs: int n
@@ -374,10 +539,11 @@ ERASABLE {n} (gr, nterms, ntermmap, nodecount) = let
   // that templates are instantiated properly
   vtypedef Env = @([n1:nat | n1 == n] arrayptr (bool, n1), bool(*change*))
   //
-  val Grammar (alphabet, prods, _) = gr
+  val alphabet = Grammar_get_syms (gr)
+  val prods = Grammar_get_prods (gr)
   //
   implement
-  funmap_foreach$fwork<int,Production><Env> (k, x, env) = let
+  funmap_foreach$fwork<Production,size_t><Env> (x, k, env) = let
     val Prod (ntm, rhs) = x
   in
     case+ rhs of
@@ -397,12 +563,12 @@ ERASABLE {n} (gr, nterms, ntermmap, nodecount) = let
     | _ => ()
   end // end of [funmap_foreach$fwork]
   var env = @(erasable, false) : Env
-  val () = funmap_foreach_env<int,Production><Env> (prods, env)
+  val () = funmap_foreach_env<Production,size_t><Env> (prods, env)
 //
   fun
   aux (env: &Env >> _): void = let
     implement
-    funmap_foreach$fwork<int,Production><Env> (k, x, env) = let
+    funmap_foreach$fwork<Production,size_t><Env> (x, k, env) = let
       val Prod (ntm, rhs) = x
       val len = list_length(rhs)
       implement
@@ -440,7 +606,7 @@ ERASABLE {n} (gr, nterms, ntermmap, nodecount) = let
       end
     end // end of [funmap_foreach$fwork]
     val () = env.1 := false
-    val () = funmap_foreach_env<int,Production><Env> (prods, env)
+    val () = funmap_foreach_env<Production,size_t><Env> (prods, env)
     // how to determine if something changed?
   in
     if env.1 then aux (env)
@@ -594,10 +760,11 @@ INITFIRST {n} (gr, X, erasable, ntermmap, nodecount) = let
 //
 vtypedef Env = @([n1:nat | n1 == n] arrayptr (bool, n1), set(Terminal))
 //
-val Grammar (alphabet, prods, _) = gr
+val alphabet = Grammar_get_syms (gr)
+val prods = Grammar_get_prods (gr)
 //
 implement
-funmap_foreach$fwork<int,Production><Env> (k, x, env) = let
+funmap_foreach$fwork<Production,size_t><Env> (x, k, env) = let
 //
 fun
 aux0 (xs: List (Symbol), erasable: &arrayptr (bool, n), res: &set(Terminal) >> _): void =
@@ -647,7 +814,7 @@ in
   end
 end // end of [funmap_foreach$fwork]
 var env = @(erasable, funset_nil{Terminal} ()) : Env
-val () = funmap_foreach_env<int,Production><Env> (prods, env)
+val () = funmap_foreach_env<Production,size_t><Env> (prods, env)
 val () = erasable := env.0
 val res = env.1
 prval () = topize (env.1)
@@ -668,7 +835,9 @@ GFIRST {n:nat} (
 implement
 GFIRST {n} (gr, erasable, nonterms, nontermmap, nodecount) = let
   typedef nodes = set(Nonterminal)
-  val Grammar (alphabet, prods, _) = gr
+//
+  val alphabet = Grammar_get_syms (gr)
+  val prods = Grammar_get_prods (gr)
 //
 vtypedef Env = @([n1:nat | n1 == n] arrayptr (bool, n1), [n1:nat | n1 == n] digraph (n1))
 //
@@ -717,7 +886,7 @@ aux0 (x: Nonterminal, j: sizeLt(n), ys: List (Symbol), env: &Env >> _): void =
   implement
   funmap_foreach$fwork<Nonterminal,size_t><Env> (ntm, idx, env) = let
     implement
-    funmap_foreach$fwork<int,Production><Env> (k, x, env) =
+    funmap_foreach$fwork<Production,size_t><Env> (x, k, env) =
       if Production_derives(x) = ntm then let
 
         val () = fprintln!(stdout_ref, "considering production: ", x)
@@ -736,7 +905,7 @@ aux0 (x: Nonterminal, j: sizeLt(n), ys: List (Symbol), env: &Env >> _): void =
         aux0 (ntm, i, rhs, env)
       end // end of [funmap_foreach$fwork]
   in
-    funmap_foreach_env<int,Production><Env> (prods, env)
+    funmap_foreach_env<Production,size_t><Env> (prods, env)
   end
   var env = @(erasable, fundigraph_make (nodecount)) : Env
   val () = funmap_foreach_env<Nonterminal,size_t><Env> (nontermmap, env)
@@ -1043,14 +1212,15 @@ end // end of [local]
 implement
 INITFOLLOW {n} (gr, A, erasable, nterms, ntermmap, fsets, nodecount) = let
   //
-  val Grammar (alphabet, prods, _) = gr
+  val alphabet = Grammar_get_syms (gr)
+  val prods = Grammar_get_prods (gr)
   //
   val p_erasable = arrayptr2ptr (erasable)
   val p_nterms = arrayptr2ptr (nterms)
   val p_fsets = arrayptr2ptr (fsets)
   //
   implement
-  funmap_foreach$fwork<int,Production><STATE> (k, x, env) = let
+  funmap_foreach$fwork<Production,size_t><STATE> (x, k, env) = let
     val Prod (lhs, rhs) = x
     prval () = lemma_list_param (rhs)
     val () = STATE_scan (env, A, rhs)
@@ -1059,7 +1229,7 @@ INITFOLLOW {n} (gr, A, erasable, nterms, ntermmap, fsets, nodecount) = let
   //
   var env: STATENODE0
   val () = STATE_init (erasable, nterms, ntermmap, fsets, nodecount, env)
-  val () = funmap_foreach_env<int,Production><STATE> (prods, env)
+  val () = funmap_foreach_env<Production,size_t><STATE> (prods, env)
   val nodecount1 = STATE_get_nodecount (env)
   val () = assert_errmsg (nodecount = nodecount1, "node count changed!")
   val res = STATE_getres_free (erasable, nterms, fsets, env)
@@ -1088,7 +1258,9 @@ GFOLLOW {n:nat} (
 implement
 GFOLLOW {n} (gr, erasable, nonterms, nontermmap, nodecount) = let
   typedef nodes = set(Nonterminal)
-  val Grammar (alphabet, prods, _) = gr
+//
+  val alphabet = Grammar_get_syms (gr)
+  val prods = Grammar_get_prods (gr)
 //
   val () = fprintln!(stdout_ref, "computing GFOLLOW")
 //
@@ -1107,7 +1279,7 @@ GFOLLOW {n} (gr, erasable, nonterms, nontermmap, nodecount) = let
     val () = fprint_newline (stdout_ref)
 
     implement
-    funmap_foreach$fwork<int,Production><Env> (k, x, env) = let
+    funmap_foreach$fwork<Production,size_t><Env> (x, k, env) = let
       val B = Production_derives (x)
     in
       if B <> A then let
@@ -1167,7 +1339,7 @@ GFOLLOW {n} (gr, erasable, nonterms, nontermmap, nodecount) = let
       end
     end // end of [funmap_foreach$fwork]
   in
-    funmap_foreach_env<int,Production><Env> (prods, env)
+    funmap_foreach_env<Production,size_t><Env> (prods, env)
   end
 //
   var env = @(erasable, fundigraph_make (nodecount)) : Env
@@ -1282,10 +1454,10 @@ test00_fun (gr: Grammar): void = let
 //
 val () = fprintln!(stdout_ref, "grammar: ", gr)
 //
-var alphabet = Grammar_alphabet (gr)
+var alphabet = Grammar_get_syms (gr)
 //
 implement
-funset_filter$pred<Symbol> (x) = case+ x of Nterm _ => false | _ => true
+funset_filter$pred<Symbol> (x) = Symbol_is_terminal (x)
 implement(env)
 funset_filter$fwork<Symbol><env> (x, env) = fprint_Symbol (stdout_ref, x)
 //
@@ -1294,7 +1466,7 @@ val () = fprint!(stdout_ref, "terminals:")
 val () = funset_filter_env<Symbol> (alphabet, env)
 //
 implement
-funset_filter$pred<Symbol> (x) = case+ x of Nterm _ => true | _ => false
+funset_filter$pred<Symbol> (x) = Symbol_is_nonterminal (x)
 implement(env)
 funset_filter$fwork<Symbol><env> (x, env) =
   (fprint_Symbol (stdout_ref, x); fprint_newline (stdout_ref))
@@ -1306,10 +1478,10 @@ val () = fprint!(stdout_ref, "productions starting with: ")
 val () = fprint_Symbol (stdout_ref, _sE)
 val () = fprint_newline (stdout_ref)
 implement
-funmap_filter$pred<int,Production> (k, x) = Production_derives (x) = _sE
+funmap_filter$pred<Production,size_t> (x, k) = Production_derives (x) = _sE
 implement(env)
-funmap_filter$fwork<int,Production><env> (k, x, env) = fprintln!(stdout_ref, x)
-val () = funmap_filter_env<int,Production> (prods, env)
+funmap_filter$fwork<Production,size_t><env> (x, k, env) = fprintln!(stdout_ref, x)
+val () = funmap_filter_env<Production,size_t> (prods, env)
 *)
 //
 (*
@@ -1385,35 +1557,23 @@ test00_A (): void = let
 val () = fprintln!(stdout_ref, "BEGIN of test00_A")
 //
 // setup a simple grammar
-val _sS' = Nterm("S'")
-val _sS = Nterm("S")
-val _sL = Nterm("L")
-val _sR = Nterm("R")
-val _sSTAR = Term("*")
-val _sEQUALS = Term("=")
-val _sID = Term("id")
+var gr = Grammar_make_nil ()
+val _sS' = Grammar_add_nonterminal(gr, "S'")
+val _sS = Grammar_add_nonterminal(gr, "S")
+val _sL = Grammar_add_nonterminal(gr, "L")
+val _sR = Grammar_add_nonterminal(gr, "R")
+val _sSTAR = Grammar_add_terminal(gr, "*")
+val _sEQUALS = Grammar_add_terminal(gr, "=")
+val _sID = Grammar_add_terminal(gr, "id")
 
-val xs =
-$list_vt{Symbol}(_sS', _sS, _sL, _sR, _sSTAR, _sEQUALS, _sID, sym_EOF, sym_EPS)
-var alphabet = funset_make_list ($UN.list_vt2t(xs))
-val () = list_vt_free (xs)
-
-var prods = funmap_make_nil{int,Production} ()
-var res: Production
-val-false = funmap_insert (prods, 0, Prod (_sS', $list{Symbol}(_sS, sym_EOF)), res)
-prval () = opt_clear (res)
-val-false = funmap_insert (prods, 1, Prod (_sS, $list{Symbol}(_sL, _sEQUALS, _sR)), res)
-prval () = opt_clear (res)
-val-false = funmap_insert (prods, 2, Prod (_sS, $list{Symbol}(_sR)), res)
-prval () = opt_clear (res)
-val-false = funmap_insert (prods, 3, Prod (_sL, $list{Symbol}(_sSTAR, _sR)), res)
-prval () = opt_clear (res)
-val-false = funmap_insert (prods, 4, Prod (_sL, $list{Symbol}(_sID)), res)
-prval () = opt_clear (res)
-val-false = funmap_insert (prods, 5, Prod (_sR, $list{Symbol}(_sL)), res)
-prval () = opt_clear (res)
+val st = Grammar_add_production (gr, _sS', $list{Symbol}(_sS, sym_EOF))
+val _ = Grammar_add_production (gr, _sS, $list{Symbol}(_sL, _sEQUALS, _sR))
+val _ = Grammar_add_production (gr, _sS, $list{Symbol}(_sR))
+val _ = Grammar_add_production (gr, _sL, $list{Symbol}(_sSTAR, _sR))
+val _ = Grammar_add_production (gr, _sL, $list{Symbol}(_sID))
+val _ = Grammar_add_production (gr, _sR, $list{Symbol}(_sL))
 //
-var gr = Grammar (alphabet, prods, 0(*start rule*))
+val () = Grammar_set_start (gr, st)
 //
 in
 //
@@ -1428,42 +1588,29 @@ test00_B (): void = let
 //
 val () = fprintln!(stdout_ref, "BEGIN of test00_B")
 //
-val _sS = Nterm("S")
-val _sE = Nterm("E")
-val _sT = Nterm("T")
-val _sF = Nterm("F")
-val _sa = Term("a")
-val _sLPAREN = Term("(")
-val _sRPAREN = Term(")")
-val _sPLUS = Term("+")
-val _sMINUS = Term("-")
-val _sSTAR = Term("*")
-
-val xs =
-$list_vt{Symbol}(_sS, _sE, _sT, _sF, _sa, _sLPAREN, _sRPAREN, _sPLUS, _sMINUS, _sSTAR, sym_EOF, sym_EPS)
-var alphabet = funset_make_list ($UN.list_vt2t(xs))
-val () = list_vt_free (xs)
-
-var prods = funmap_make_nil{int,Production} ()
-var res: Production
-val-false = funmap_insert (prods, 0, Prod (_sS, $list{Symbol}(_sE, sym_EOF)), res)
-prval () = opt_clear (res)
-val-false = funmap_insert (prods, 1, Prod (_sE, $list{Symbol}(_sE, _sPLUS, _sT)), res)
-prval () = opt_clear (res)
-val-false = funmap_insert (prods, 2, Prod (_sE, $list{Symbol}(_sT)), res)
-prval () = opt_clear (res)
-val-false = funmap_insert (prods, 3, Prod (_sT, $list{Symbol}(_sT, _sSTAR, _sF)), res)
-prval () = opt_clear (res)
-val-false = funmap_insert (prods, 4, Prod (_sT, $list{Symbol}(_sF)), res)
-prval () = opt_clear (res)
-val-false = funmap_insert (prods, 5, Prod (_sF, $list{Symbol}(_sLPAREN, _sE, _sRPAREN)), res)
-prval () = opt_clear (res)
-val-false = funmap_insert (prods, 6, Prod (_sF, $list{Symbol}(_sMINUS, _sT)), res)
-prval () = opt_clear (res)
-val-false = funmap_insert (prods, 7, Prod (_sF, $list{Symbol}(_sa)), res)
-prval () = opt_clear (res)
+var gr = Grammar_make_nil ()
 //
-var gr = Grammar (alphabet, prods, 0(*start rule*))
+val _sS = Grammar_add_nonterminal(gr, "S")
+val _sE = Grammar_add_nonterminal(gr, "E")
+val _sT = Grammar_add_nonterminal(gr, "T")
+val _sF = Grammar_add_nonterminal(gr, "F")
+val _sa = Grammar_add_terminal(gr, "a")
+val _sLPAREN = Grammar_add_terminal(gr, "(")
+val _sRPAREN = Grammar_add_terminal(gr, ")")
+val _sPLUS = Grammar_add_terminal(gr, "+")
+val _sMINUS = Grammar_add_terminal(gr, "-")
+val _sSTAR = Grammar_add_terminal(gr, "*")
+//
+val _ = Grammar_add_production (gr, _sS, $list{Symbol}(_sE, sym_EOF))
+val st = Grammar_add_production (gr, _sE, $list{Symbol}(_sE, _sPLUS, _sT))
+val _ = Grammar_add_production (gr, _sE, $list{Symbol}(_sT))
+val _ = Grammar_add_production (gr, _sT, $list{Symbol}(_sT, _sSTAR, _sF))
+val _ = Grammar_add_production (gr, _sT, $list{Symbol}(_sF))
+val _ = Grammar_add_production (gr, _sF, $list{Symbol}(_sLPAREN, _sE, _sRPAREN))
+val _ = Grammar_add_production (gr, _sF, $list{Symbol}(_sMINUS, _sT))
+val _ = Grammar_add_production (gr, _sF, $list{Symbol}(_sa))
+//
+val () = Grammar_set_start (gr, st)
 //
 in
 //
