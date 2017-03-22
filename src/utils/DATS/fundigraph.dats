@@ -4,7 +4,7 @@ staload UN = "prelude/SATS/unsafe.sats"
 
 (* ****** ****** *)
 
-staload "./fundigraph.sats"
+staload "./../SATS/fundigraph.sats"
 
 datatype Digraph (int) = {n:nat} Digraph (n) of (size_t n, arrayref (List (size_t), n))
 

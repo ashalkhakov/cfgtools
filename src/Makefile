@@ -22,18 +22,21 @@ PATSCCOMP = $(CC) -D_XOPEN_SOURCE
 ######
 
 SOURCES_SATS += \
-  fundigraph.sats
+  utils/SATS/fundigraph.sats \
+  utils/SATS/ltab.sats \
+  utils/SATS/stapool.sats \
+  SATS/symbols.sats
 
 SOURCES_DATS += \
-  fundigraph.dats \
-  stapool.dats \
-  ltab.dats \
-  symbols.dats \
-  grm.dats
+  utils/DATS/fundigraph.dats \
+  utils/DATS/stapool.dats \
+  utils/DATS/ltab.dats \
+  DATS/symbols.dats \
+  DATS/grm.dats
 
 ######
 
-MYTARGET=grm
+MYTARGET=DATS/grm
 
 ######
 #

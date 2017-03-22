@@ -2,68 +2,7 @@
 
 (* ****** ****** *)
 //
-extern
-fun{key:t@ype}
-equal_key_key (key, key):<> bool
-//
-extern
-fun{key:t@ype}
-hash_key (x: key):<> ulint
-//
-typedef HASHTBLNODE = @{
-  buckets= ptr
-, ntot= size_t
-, n= int
-, nextfree= int
-} (* end of [HASHTBLNODE] *)
-//
-absvt@ype hashtbl_vt0ype (key:t@ype, itm:t@ype, int) = HASHTBLNODE
-//
-vtypedef hashtbl (k:t@ype, i:t@ype, n:int) = hashtbl_vt0ype (k, i, n)
-//
-extern
-praxi
-lemma_hashtbl_param
-  {key:t@ype;itm:t@ype}{n:int}
-  (!hashtbl (key, itm, n)): [n >= 0] void
-//
-extern
-fun{key,itm:t@ype}
-hashtbl_make_nil {ntot:nat} (&HASHTBLNODE? >> hashtbl (key, itm, ntot), size_t ntot): void
-//
-extern
-fun{key,itm:t@ype}
-hashtbl_free {ntot:int} (&hashtbl (key, itm, ntot) >> HASHTBLNODE?): void
-//
-extern
-fun{key,itm:t@ype}
-hashtbl_insert {ntot:nat} (
-  ht: &hashtbl (key, itm, ntot) >> hashtbl (key, itm, ntot)
-, k0: key
-, itm: itm
-, res: &itm? >> opt (itm, b)
-) : #[b:bool] bool b
-//
-extern
-fun{key,itm:t@ype}
-hashtbl_search {ntot:nat} (
-  ht: &hashtbl (key, itm, ntot)
-, k0: key
-, res: &itm? >> opt (itm, b)
-) : #[b:bool] bool b(*found*)
-//
-extern
-fun{key,itm:t@ype}
-hashtbl_search_ref {ntot:nat} (
-  ht: &hashtbl (key, itm, ntot)
-, k0: key
-) : intBtw(~1, ntot)
-//
-extern
-fun{key,itm:t@ype}
-hashtbl_get_ref {ntot:nat} (ht: &hashtbl (key, itm, ntot), k0: natLt(ntot)): itm
-//
-(* ****** ****** *)
+staload "./../SATS/ltab.sats"
 //
 #define ATS_DYNLOADFLAG 0
 //
@@ -579,51 +518,5 @@ in
 end // end of [hashtbl_get_ref]
 //
 end // end of [local]
-//
-(* ****** ****** *)
-//
-(*
-implement main0 () = {
-//
-  typedef T = string
-  typedef V = int
-  #define SZ 1024
-  var ht : HASHTBLNODE // unhashtbl_make_nilialized
-  val sz = (i2sz)SZ
-  val () = hashtbl_make_nil<T,V> (ht, sz)
-//
-  fun
-  test_insertlkup (ht: &hashtbl (T, V, SZ) >> hashtbl (T, V, SZ), k: T, v: V): void = {
-    var itm: V
-    val () = fprintln!(stdout_ref, "inserting key: [", k, "] with item [", v,"]")
-    val-false = hashtbl_insert<T,V> (ht, k, v, itm)
-    prval () = opt_clear {V} (itm)
-    val-true = hashtbl_search<T,V> (ht, k, itm)
-    prval () = opt_unsome {V} (itm)
-    val () = fprintln!(stdout_ref, "looking up key: [", k, "] gives: [", itm, "]")
-  } (* end of [test_insertlkup] *)
-//
-  fun
-  test_insertlkup_dup (ht: &hashtbl (T, V, SZ) >> hashtbl (T, V, SZ), k: T, v: V): void = {
-    var itm: V
-    val () = fprintln!(stdout_ref, "inserting (duplicate) key: [", k, "] with item [", v,"]")
-    val-true = hashtbl_insert<T,V> (ht, k, v, itm)
-    prval () = opt_clear {V} (itm)
-    val-true = hashtbl_search<T,V> (ht, k, itm)
-    prval () = opt_unsome {V} (itm)
-    val () = fprintln!(stdout_ref, "looking up key: [", k, "] gives: [", itm, "]")
-  } (* end of [test_insertlkup_dup] *)
-//
-  val () = test_insertlkup (ht, "hello", 0)
-  val () = test_insertlkup (ht, "hey", 1)
-  val () = test_insertlkup (ht, "there", 2)
-  val () = test_insertlkup (ht, "hey 2", 3)
-//
-  val () = test_insertlkup_dup (ht, "hello", 5)
-  val () = test_insertlkup_dup (ht, "there", 35)
-//
-  val () = hashtbl_free<T,V> (ht)
-} (* end of [main0] *)
-*)
 //
 (* ****** ****** *)
