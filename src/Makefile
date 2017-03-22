@@ -36,7 +36,7 @@ SOURCES_DATS += \
 
 ######
 
-MYTARGET=DATS/grm
+MYTARGET=DATS/grm.exe
 
 ######
 #
@@ -55,6 +55,9 @@ testall:: cleanall
 
 ######
 
+cleanall:: ; $(RMF) DATS/*_?ats.c DATS/*_?ats.o
+cleanall:: ; $(RMF) SATS/*_?ats.c SATS/*_?ats.o
+cleanall:: ; make -C TEST cleanall
 cleanall:: ; $(RMF) MYPORTDIR/*
 
 ######

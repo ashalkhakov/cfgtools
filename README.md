@@ -17,4 +17,5 @@ TODO
 
 ### Running tests
 
-TODO
+The whole thing doesn't build yet, but the tests do. Please see the
+tests.
